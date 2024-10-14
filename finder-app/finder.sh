@@ -1,7 +1,6 @@
 #!/bin/bash
 
 success() {
-    echo "Successfully executed!"
     exit 0
 }
 
@@ -26,8 +25,8 @@ if [ ! -d "$filesdir" ]; then
 fi
 
 # display variable values
-echo "Directory to search: $filesdir"
-echo "Search string: $searchstr"
+# echo "Directory to search: $filesdir"
+# echo "Search string: $searchstr"
 
 # count the number of files in the directory and sub-directories
 file_count=$(find "$filesdir" -type f | wc -l)
