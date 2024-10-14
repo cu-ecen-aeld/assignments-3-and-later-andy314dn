@@ -29,4 +29,13 @@ fi
 echo "Directory to search: $filesdir"
 echo "Search string: $searchstr"
 
+# count the number of files in the directory and sub-directories
+file_count=$(find "$filesdir" -type f | wc -l)
+
+# count the number of lines that contain the search string in these files
+match_count=$(grep -r "$searchstr" "$filesdir" 2>/dev/null | wc -l)
+
+# print the result
+echo "The number of files are $file_count and the number of matching lines are $match_count"
+
 success
