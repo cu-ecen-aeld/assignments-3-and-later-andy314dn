@@ -65,6 +65,12 @@ OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
 # remove temporary directories
 rm -rf /tmp/aeld-data
 
+# add output of file utility after building "writer" with CROSS_COMPILE
+make clean
+make CROSS_COMPILE=aarch64-none-linux-gnu-
+file writer > ../assignments/assignment2/fileresult.txt
+make clean
+
 set +e
 echo ${OUTPUTSTRING} | grep "${MATCHSTR}"
 if [ $? -eq 0 ]; then
