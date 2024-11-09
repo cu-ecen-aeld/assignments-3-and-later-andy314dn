@@ -17,6 +17,9 @@
  * Use the syslog capability to log any unexpected errors with LOG_ERR level.
  */
 
+// NOTE: read the log using:
+// $ cat /var/log/syslog
+
 int main(int argc, char *argv[]) {
     // open connection to syslog
     openlog("AELD-Assignment1", LOG_PID | LOG_CONS, LOG_USER);
