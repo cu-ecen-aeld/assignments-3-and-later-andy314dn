@@ -13,7 +13,7 @@
  */
 
 int main() {
-    openlog(NULL, 0, LOG_USER);
+    openlog("AELD-Assignment1", 0, LOG_USER);
     syslog(LOG_ERR, "For error: \n\r");
     syslog(LOG_DEBUG, "Debug message\r\n");
 }
