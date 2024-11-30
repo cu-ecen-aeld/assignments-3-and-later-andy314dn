@@ -1,4 +1,8 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -17,7 +21,7 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+    return (system(cmd) ? true : false);
 }
 
 /**
@@ -40,28 +44,39 @@ bool do_exec(int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
-    for(i=0; i<count; i++)
-    {
-        command[i] = va_arg(args, char *);
+    int status;
+    pid_t pid;
+
+    pid = fork();
+    if (0 != pid)
+        return false;
+    else {
+        for (i=0; i<count; i++)
+        {
+            command[i] = va_arg(args, char *);
+        }
+        command[count] = NULL;
+        // this line is to avoid a compile warning before your implementation is complete
+        // and may be removed
+        command[count] = command[count];
+
+        /*
+         * TODO:
+         *   Execute a system command by calling fork, execv(),
+         *   and wait instead of system (see LSP page 161).
+         *   Use the command[0] as the full path to the command to execute
+         *   (first argument to execv), and use the remaining arguments
+         *   as second argument to the execv() command.
+         *
+         */
+
+        va_end(args);
+        status = execv(command[0], &command[1]);
+        if (0 != status)
+            return false;
     }
-    command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
-
-    va_end(args);
-
-    return true;
+    return (0 == waitpid(pid, &status, 0));
 }
 
 /**
@@ -75,6 +90,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
