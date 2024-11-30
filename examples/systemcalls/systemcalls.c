@@ -91,7 +91,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     char * command[count+1];
     int i;
 
-    for(i=0; i<count; i++)
+    for (i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
     }
@@ -101,13 +101,13 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     command[count] = command[count];
 
 
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
+    /*
+     * TODO
+     *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
+     *   redirect standard out to a file specified by outputfile.
+     *   The rest of the behaviour is same as do_exec()
+     *
+    */
 
     va_end(args);
 
