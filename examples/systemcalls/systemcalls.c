@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <syslog.h>
+#include <sys/stat.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -112,55 +113,69 @@ bool do_exec(int count, ...)
 */
 bool do_exec_redirect(const char *outputfile, int count, ...)
 {
-    va_list args;
-    va_start(args, count);
-    char * command[count+1];
-    int i;
-    int status;
-    int fd;
-    pid_t pid;
-
-    fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
-    if (fd < 0)
+    // at least one argument is required
+    if (count < 1) {
+        // log an error if no command is provided
+        syslog(LOG_ERR, "No command provided");
         return false;
-    
-    pid = fork();
-
-    switch (pid)
-    {
-    case -1:
-        return false;
-    case 0:
-        /* code */
-        for (i=0; i<count; i++)
-        {
-            command[i] = va_arg(args, char *);
-        }
-        command[count] = NULL;
-        // this line is to avoid a compile warning before your implementation is complete
-        // and may be removed
-        command[count] = command[count];
-
-
-        /*
-         * TODO
-         *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
-         *   redirect standard out to a file specified by outputfile.
-         *   The rest of the behaviour is same as do_exec()
-         *
-        */
-
-        va_end(args);
-        if (dup2(fd, 1) < 0)
-            return false;
-        close(fd);
-        status = execv(command[0], &command[1]);
-        if (0 != status)
-            return false;
-    
-    default:
-        close(fd);
     }
 
-    return (0 == waitpid(pid, &status, 0));
+    va_list args;
+    va_start(args, count);
+
+    char * command[count+1];
+    for (int i=0; i<count; i++) {
+        command[i] = va_arg(args, char *);
+    }
+    command[count] = NULL;
+    // this line is to avoid a compile warning before your implementation is complete
+    // and may be removed
+    command[count] = command[count];
+
+    va_end(args);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        // fork failed
+        syslog(LOG_ERR, "Fork failed: %m");
+        return false;
+    }
+
+    if (0 == pid) {
+        // child process
+        // open output file for writing
+        int fd = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+        if (fd < 0) {
+            syslog(LOG_ERR, "Failed to open output file %s: %m", outputfile);
+            _exit(1);
+        }
+        
+        // redirect stdout and stderr to the output file
+        if (dup2(fd, STDOUT_FILENO) < 0 || dup2(fd, STDERR_FILENO) < 0) {
+            syslog(LOG_ERR, "Failed to redirect output to %s: %m", outputfile);
+            close(fd);
+            _exit(1);
+        }
+        close(fd); // close the original file descriptor
+
+        // execute command
+        execv(command[0], command);
+        syslog(LOG_ERR, "execv failed for command %s: %m", command[0]);
+        _exit(1);
+    }
+
+    // parent process
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+        syslog(LOG_ERR, "waitpid failed: %m");
+        return false;
+    }
+
+    // check if the child process terminated normally
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return true;
+    }
+
+    syslog(LOG_ERR, "Command %s failed with exit status %d", command[0], WEXITSTATUS(status));
+    return false;
 }
