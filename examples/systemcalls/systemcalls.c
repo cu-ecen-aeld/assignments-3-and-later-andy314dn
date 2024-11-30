@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <syslog.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -17,7 +23,19 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+    // Prevent NULL pointer dereference
+    if (NULL == cmd)
+        return false;
+
+    int ret = system(cmd);
+    // check if system() failed
+    if (-1 == ret)
+        return false;
+    
+    // check the command's exit status
+    if (WIFEXITED(ret) && 0 == WEXITSTATUS(ret))
+        return true;
+    return false;
 }
 
 /**
@@ -36,12 +54,18 @@ bool do_system(const char *cmd)
 
 bool do_exec(int count, ...)
 {
+    // at least one argument is required
+    if (count < 1) {
+        // log an error if no command is provided
+        syslog(LOG_ERR, "No command provided");
+        return false;
+    }
+
     va_list args;
     va_start(args, count);
+
     char * command[count+1];
-    int i;
-    for(i=0; i<count; i++)
-    {
+    for (int i=0; i<count; i++) {
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
@@ -49,19 +73,36 @@ bool do_exec(int count, ...)
     // and may be removed
     command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
-
     va_end(args);
 
-    return true;
+    pid_t pid = fork();
+    if (pid < 0) {
+        // fork failed
+        syslog(LOG_ERR, "Fork failed: %m");
+        return false;
+    }
+
+    if (0 == pid) {
+        // child process
+        execv(command[0], command); // execute command
+        syslog(LOG_ERR, "execv failed for command %s: %m", command[0]);
+        _exit(1);
+    }
+
+    // parent process
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+        syslog(LOG_ERR, "waitpid failed: %m");
+        return false;
+    }
+
+    // Check if the child process terminated normally
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return true;
+    }
+
+    syslog(LOG_ERR, "Command %s failed with exit status %d", command[0], WEXITSTATUS(status));
+    return false; // Command failed or returned a non-zero exit status
 }
 
 /**
@@ -75,25 +116,51 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
-    for(i=0; i<count; i++)
+    int status;
+    int fd;
+    pid_t pid;
+
+    fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+    if (fd < 0)
+        return false;
+    
+    pid = fork();
+
+    switch (pid)
     {
-        command[i] = va_arg(args, char *);
+    case -1:
+        return false;
+    case 0:
+        /* code */
+        for (i=0; i<count; i++)
+        {
+            command[i] = va_arg(args, char *);
+        }
+        command[count] = NULL;
+        // this line is to avoid a compile warning before your implementation is complete
+        // and may be removed
+        command[count] = command[count];
+
+
+        /*
+         * TODO
+         *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
+         *   redirect standard out to a file specified by outputfile.
+         *   The rest of the behaviour is same as do_exec()
+         *
+        */
+
+        va_end(args);
+        if (dup2(fd, 1) < 0)
+            return false;
+        close(fd);
+        status = execv(command[0], &command[1]);
+        if (0 != status)
+            return false;
+    
+    default:
+        close(fd);
     }
-    command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
-
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
-
-    va_end(args);
-
-    return true;
+    return (0 == waitpid(pid, &status, 0));
 }
