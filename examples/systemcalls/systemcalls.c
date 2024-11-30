@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 /**
@@ -21,7 +22,19 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return (system(cmd) ? true : false);
+    // Prevent NULL pointer dereference
+    if (NULL == cmd)
+        return false;
+
+    int ret = system(cmd);
+    // check if system() failed
+    if (-1 == ret)
+        return false;
+    
+    // check the command's exit status
+    if (WIFEXITED(ret) && 0 == WEXITSTATUS(ret))
+        return true;
+    return false;
 }
 
 /**
@@ -90,26 +103,51 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+    int status;
+    int fd;
+    pid_t pid;
 
-    for (i=0; i<count; i++)
+    fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+    if (fd < 0)
+        return false;
+    
+    pid = fork();
+
+    switch (pid)
     {
-        command[i] = va_arg(args, char *);
+    case -1:
+        return false;
+    case 0:
+        /* code */
+        for (i=0; i<count; i++)
+        {
+            command[i] = va_arg(args, char *);
+        }
+        command[count] = NULL;
+        // this line is to avoid a compile warning before your implementation is complete
+        // and may be removed
+        command[count] = command[count];
+
+
+        /*
+         * TODO
+         *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
+         *   redirect standard out to a file specified by outputfile.
+         *   The rest of the behaviour is same as do_exec()
+         *
+        */
+
+        va_end(args);
+        if (dup2(fd, 1) < 0)
+            return false;
+        close(fd);
+        status = execv(command[0], &command[1]);
+        if (0 != status)
+            return false;
+    
+    default:
+        close(fd);
     }
-    command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
-
-    /*
-     * TODO
-     *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
-     *   redirect standard out to a file specified by outputfile.
-     *   The rest of the behaviour is same as do_exec()
-     *
-    */
-
-    va_end(args);
-
-    return true;
+    return (0 == waitpid(pid, &status, 0));
 }
