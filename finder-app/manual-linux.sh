@@ -13,6 +13,9 @@ FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
 
+# install dependencies
+# sudo apt install -y flex bison libssl-dev
+
 if [ $# -lt 1 ]
 then
 	echo "Using default directory ${OUTDIR} for output"
@@ -34,11 +37,9 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
 
-    # TODO: Add your kernel build steps here
-    printf "\033[0;32m TODO1 \033[0m\n"
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
     make -j12 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
-    printf "\033[0;33m DONE TODO1 \033[0m\n"
+    printf "\033[0;33m DONE build kernel \033[0m\n"
 fi
 
 echo "Adding the Image in outdir"
@@ -60,8 +61,7 @@ then
 git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
-    # TODO:  Configure busybox
-    printf "\033[0;32m TODO3 \033[0m\n"
+    printf "\033[0;32mCheck out to version ${BUSYBOX_VERSION} of busybox\033[0m\n"
 else
     cd busybox
 fi
