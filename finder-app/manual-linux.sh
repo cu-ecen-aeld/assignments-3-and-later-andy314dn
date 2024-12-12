@@ -35,6 +35,10 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION}
 
     # TODO: Add your kernel build steps here
+    printf "\033[0;32m TODO1 \033[0m\n"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    make -j12 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
+    printf "\033[0;33m DONE TODO1 \033[0m\n"
 fi
 
 echo "Adding the Image in outdir"
@@ -48,6 +52,7 @@ then
 fi
 
 # TODO: Create necessary base directories
+printf "\033[0;32m TODO2 \033[0m\n"
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -56,25 +61,35 @@ git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
+    printf "\033[0;32m TODO3 \033[0m\n"
 else
     cd busybox
 fi
 
 # TODO: Make and install busybox
+printf "\033[0;32m TODO4 \033[0m\n"
 
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
+printf "\033[0;32m TODO5 \033[0m\n"
 
 # TODO: Make device nodes
+printf "\033[0;32m TODO6 \033[0m\n"
 
 # TODO: Clean and build the writer utility
+printf "\033[0;32m TODO7 \033[0m\n"
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
+printf "\033[0;32m TODO8 \033[0m\n"
 
 # TODO: Chown the root directory
+printf "\033[0;32m TODO9 \033[0m\n"
 
 # TODO: Create initramfs.cpio.gz
+printf "\033[0;32m TODO10 \033[0m\n"
+printf "\033[0;31m END \033[0m\n"
+exit 0
