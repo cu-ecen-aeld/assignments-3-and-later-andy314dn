@@ -12,6 +12,7 @@ BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
+ROOTFS=${OUTDIR}/rootfs
 
 # install dependencies
 # sudo apt install -y flex bison libssl-dev
@@ -52,8 +53,12 @@ then
     sudo rm  -rf ${OUTDIR}/rootfs
 fi
 
-# TODO: Create necessary base directories
-printf "\033[0;32m TODO2 \033[0m\n"
+mkdir -p ${ROOTFS}
+cd rootfs
+mkdir -p bin dev etc home lib lib64 proc sbin sys tmp usr var
+mkdir -p usr/bin usr/lib usr/sbin
+mkdir -p var/log
+printf "\033[0;33mBase directories are created\033[0m\n"
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -68,6 +73,11 @@ fi
 
 # TODO: Make and install busybox
 printf "\033[0;32m TODO4 \033[0m\n"
+make distclean
+make defconfig
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j$(nproc)
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=${ROOTFS} install 
+cd "$OUTDIR"
 
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
