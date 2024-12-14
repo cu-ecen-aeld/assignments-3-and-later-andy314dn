@@ -84,23 +84,50 @@ echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
-# TODO: Add library dependencies to rootfs
-printf "\033[0;32m TODO5 \033[0m\n"
+# Add library dependencies to rootfs
+printf "\033[0;32m Add library dependencies to rootfs \033[0m\n"
+# Program interpreter placed in “lib” directory
+cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/ld-2.33.so        ./lib
+# Libraries placed in lib64 directory (since arch is 64 bit)
+cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc-2.33.so      ./lib64
+cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv-2.33.so ./lib64
 
-# TODO: Make device nodes
-printf "\033[0;32m TODO6 \033[0m\n"
+# Make device nodes
+printf "\033[0;32m Make device nodes \033[0m\n"
+sudo mknod -m 666 dev/null    c 1 3
+sudo mknod -m 600 dev/console c 5 1
 
-# TODO: Clean and build the writer utility
-printf "\033[0;32m TODO7 \033[0m\n"
+# Clean and build the writer utility
+printf "\033[0;32m Clean and build the writer utility \033[0m\n"
+cd "$FINDER_APP_DIR"
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} clean
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j$(nproc) all
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
 printf "\033[0;32m TODO8 \033[0m\n"
+# Copy the writer application to home directory of rootfs
+cp writer ${ROOTFS}/home
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} clean
+# Copy finder.sh, conf/username.txt, conf/assignment.txt, and finder-test.sh to home directory of rootfs
+cp finder.sh finder-test.sh ${ROOTFS}/home
+rsync -R conf/username.txt ${ROOTFS}/home
+rsync -R conf/assignment.txt ${ROOTFS}/home
+# Modify the finder-test.sh script to reference conf/assignment.txt instead of ../conf/assignment.txt
+sed -i 's|\.\./conf/assignment\.txt|conf/assignment.txt|g' ${ROOTFS}/home/finder-test.sh
+# Copy the autorun-qemu.sh script into the home directory of rootfs
+cp autorun-qemu.sh ${ROOTFS}/home
 
 # TODO: Chown the root directory
 printf "\033[0;32m TODO9 \033[0m\n"
+cd "$ROOTFS"
+sudo chown -R root:root *
 
 # TODO: Create initramfs.cpio.gz
-printf "\033[0;32m TODO10 \033[0m\n"
+printf "\033[0;32m Create initramfs.cpio.gz \033[0m\n"
+cd "${ROOTFS}"
+find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
+cd "${OUTDIR}"
+gzip -f initramfs.cpio
 printf "\033[0;31m END \033[0m\n"
 exit 0
