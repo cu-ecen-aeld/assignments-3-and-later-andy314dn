@@ -15,7 +15,7 @@ CROSS_COMPILE=aarch64-none-linux-gnu-
 ROOTFS=${OUTDIR}/rootfs
 
 # install dependencies
-# sudo apt install -y flex bison libssl-dev
+# sudo apt install -y flex bison libssl-dev qemu-system-arm
 
 if [ $# -lt 1 ]
 then
