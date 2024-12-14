@@ -72,8 +72,8 @@ else
     cd busybox
 fi
 
-# TODO: Make and install busybox
-printf "\033[0;32m TODO4 \033[0m\n"
+# Make and install busybox
+printf "\033[0;32m Make and install busybox \033[0m\n"
 make distclean
 make defconfig
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j$(nproc)
