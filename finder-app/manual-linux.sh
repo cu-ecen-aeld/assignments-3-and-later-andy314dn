@@ -114,6 +114,8 @@ make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} clean
 cp finder.sh finder-test.sh ${ROOTFS}/home
 rsync -R conf/username.txt ${ROOTFS}/home
 rsync -R conf/assignment.txt ${ROOTFS}/home
+# Remove the usage of make in finder-test.sh since there is no make utility in the target device
+sed -i '51,53s/^/#/' ${ROOTFS}/home/finder-test.sh
 # Modify the finder-test.sh script to reference conf/assignment.txt instead of ../conf/assignment.txt
 sed -i 's|\.\./conf/assignment\.txt|conf/assignment.txt|g' ${ROOTFS}/home/finder-test.sh
 # Copy the autorun-qemu.sh script into the home directory of rootfs
