@@ -91,6 +91,7 @@ TOOLCHAIN_DIR=empty
 if grep -q docker /proc/self/cgroup; then
     # Running INSIDE Docker container
     GCC_ARM_VERSION=13.3.rel1
+    # check the version in https://github.com/cu-ecen-aeld/aesd-autotest-docker/blob/master/docker/Dockerfile
     TOOLCHAIN_DIR=/usr/local/arm-cross-compiler/install/arm-gnu-toolchain-$GCC_ARM_VERSION-x86_64-aarch64-none-linux-gnu
     cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1  ./lib/ld-linux-aarch64.so.1
     cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib64/libc.so.6      ./lib64/
