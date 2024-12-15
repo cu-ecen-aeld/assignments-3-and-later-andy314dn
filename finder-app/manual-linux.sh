@@ -87,10 +87,11 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 # Add library dependencies to rootfs
 printf "\033[0;32m Add library dependencies to rootfs \033[0m\n"
 # Program interpreter placed in “lib” directory
-cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/ld-2.33.so        ./lib
+cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/ld-2.33.so        ./lib/ld-linux-aarch64.so.1
 # Libraries placed in lib64 directory (since arch is 64 bit)
-cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc-2.33.so      ./lib64
-cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv-2.33.so ./lib64
+cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc-2.33.so      ./lib64/libc.so.6
+cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm-2.33.so      ./lib64/libm.so.6
+cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv-2.33.so ./lib64/libresolv.so.2
 
 # Make device nodes
 printf "\033[0;32m Make device nodes \033[0m\n"
@@ -103,9 +104,9 @@ cd "$FINDER_APP_DIR"
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} clean
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j$(nproc) all
 
-# TODO: Copy the finder related scripts and executables to the /home directory
+# Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-printf "\033[0;32m TODO8 \033[0m\n"
+printf "\033[0;32m Copy related files to target rootfs \033[0m\n"
 # Copy the writer application to home directory of rootfs
 cp writer ${ROOTFS}/home
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} clean
@@ -118,12 +119,12 @@ sed -i 's|\.\./conf/assignment\.txt|conf/assignment.txt|g' ${ROOTFS}/home/finder
 # Copy the autorun-qemu.sh script into the home directory of rootfs
 cp autorun-qemu.sh ${ROOTFS}/home
 
-# TODO: Chown the root directory
-printf "\033[0;32m TODO9 \033[0m\n"
+# Chown the root directory
+printf "\033[0;32m Chown the root directory \033[0m\n"
 cd "$ROOTFS"
 sudo chown -R root:root *
 
-# TODO: Create initramfs.cpio.gz
+# Create initramfs.cpio.gz
 printf "\033[0;32m Create initramfs.cpio.gz \033[0m\n"
 cd "${ROOTFS}"
 find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
