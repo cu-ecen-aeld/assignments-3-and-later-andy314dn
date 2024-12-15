@@ -12,7 +12,6 @@ BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
-ROOTFS=${OUTDIR}/rootfs
 
 # install dependencies
 # sudo apt install -y flex bison libssl-dev qemu-system-arm
@@ -24,6 +23,8 @@ else
 	OUTDIR=$1
 	echo "Using passed directory ${OUTDIR} for output"
 fi
+# after checking OUTDIR, we can know where the rootfs is
+ROOTFS=${OUTDIR}/rootfs
 
 mkdir -p ${OUTDIR}
 
@@ -55,7 +56,7 @@ then
 fi
 
 mkdir -p ${ROOTFS}
-cd rootfs
+cd "${ROOTFS}"
 mkdir -p bin dev etc home lib lib64 proc sbin sys tmp usr var
 mkdir -p usr/bin usr/lib usr/sbin
 mkdir -p var/log
