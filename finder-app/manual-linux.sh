@@ -87,12 +87,26 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # Add library dependencies to rootfs
 printf "\033[0;32m Add library dependencies to rootfs \033[0m\n"
-# Program interpreter placed in “lib” directory
-cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/ld-2.33.so        ./lib/ld-linux-aarch64.so.1
-# Libraries placed in lib64 directory (since arch is 64 bit)
-cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc-2.33.so      ./lib64/libc.so.6
-cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm-2.33.so      ./lib64/libm.so.6
-cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv-2.33.so ./lib64/libresolv.so.2
+TOOLCHAIN_DIR=empty
+if grep -q docker /proc/self/cgroup; then
+    # Running INSIDE Docker container
+    GCC_ARM_VERSION=13.3.rel1
+    TOOLCHAIN_DIR=/usr/local/arm-cross-compiler/install/arm-gnu-toolchain-$GCC_ARM_VERSION-x86_64-aarch64-none-linux-gnu
+    cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1  ./lib/ld-linux-aarch64.so.1
+    cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib64/libc.so.6      ./lib64/
+    cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib64/libm.so.6      ./lib64/
+    cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2 ./lib64/
+else
+    # Running outside Docker container
+    TOOLCHAIN_DIR=/opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu
+    # Program interpreter placed in “lib” directory
+    cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib64/ld-2.33.so        ./lib/ld-linux-aarch64.so.1
+    # Libraries placed in lib64 directory (since arch is 64 bit)
+    cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib64/libc-2.33.so      ./lib64/libc.so.6
+    cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib64/libm-2.33.so      ./lib64/libm.so.6
+    cp ${TOOLCHAIN_DIR}/aarch64-none-linux-gnu/libc/lib64/libresolv-2.33.so ./lib64/libresolv.so.2
+fi
+printf "\033[0;33m Toolchain dir: ${TOOLCHAIN_DIR} \033[0m\n"
 
 # Make device nodes
 printf "\033[0;32m Make device nodes \033[0m\n"
