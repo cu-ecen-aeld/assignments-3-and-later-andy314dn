@@ -7,13 +7,21 @@
  * It should be returned by your thread so it can be freed by
  * the joiner thread.
  */
-struct thread_data{
+struct thread_data {
     /*
-     * TODO: add other values your thread will need to manage
+     * add other values your thread will need to manage
      * into this structure, use this structure to communicate
      * between the start_thread_obtaining_mutex function and
      * your thread implementation.
      */
+    // Process ID
+    pthread_t pid;
+    // Mutex to be managed by the thread
+    pthread_mutex_t* mutex;
+    // Time to wait before obtaining the mutex, in milliseconds
+    int wait_to_obtain_ms;
+    // Time to wait before releasing the mutex, in milliseconds
+    int wait_to_release_ms;
 
     /**
      * Set to true if the thread completed with success, false
@@ -24,17 +32,27 @@ struct thread_data{
 
 
 /**
-* Start a thread which sleeps @param wait_to_obtain_ms number of milliseconds, then obtains the
-* mutex in @param mutex, then holds for @param wait_to_release_ms milliseconds, then releases.
-* The start_thread_obtaining_mutex function should only start the thread and should not block
+* @param thread The thread to be created
+* @param mutex  The mutex associated with the thread
+* @param wait_to_obtain_ms  time to wait before obtaining the mutex, in ms
+* @param wait_to_release_ms time to wait before releasing the mutex, in ms
+* 
+* Start a thread which sleeps `wait_to_obtain_ms` number of milliseconds, then obtains the
+* mutex in `mutex`, then holds for `wait_to_release_ms` milliseconds, then releases.
+* 
+* The `start_thread_obtaining_mutex` function should only start the thread and should not block
 * for the thread to complete.
-* The start_thread_obtaining_mutex function should use dynamic memory allocation for thread_data
+*
+* The `start_thread_obtaining_mutex` function should use dynamic memory allocation for thread_data
 * structure passed into the thread.  The number of threads active should be limited only by the
 * amount of available memory.
+*
 * The thread started should return a pointer to the thread_data structure when it exits, which can be used
 * to free memory as well as to check thread_complete_success for successful exit.
-* If a thread was started succesfully @param thread should be filled with the pthread_create thread ID
+*
+* If a thread was started succesfully `thread` should be filled with the pthread_create thread ID
 * coresponding to the thread which was started.
+*
 * @return true if the thread could be started, false if a failure occurred.
 */
-bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int wait_to_obtain_ms, int wait_to_release_ms);
+bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex, int wait_to_obtain_ms, int wait_to_release_ms);
