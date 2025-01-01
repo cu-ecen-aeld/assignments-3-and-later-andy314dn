@@ -5,6 +5,8 @@
 set -e
 set -u
 
+printf "Current script location: \e[1;33m`realpath "$0"`\e[0m\n"
+
 NUMFILES=10
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
