@@ -85,7 +85,7 @@ done
 if [ "$SCRIPTLOC" != "/usr/bin" ]; then
 	OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
 else
-	OUTPUTSTRING=$(finder.sh "$WRITEDIR" "$WRITESTR")
+	OUTPUTSTRING=$(finder.sh "$WRITEDIR" "$WRITESTR" | tee /tmp/assignment4-result.txt)
 fi
 
 # remove temporary directories
