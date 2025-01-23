@@ -43,6 +43,7 @@ int main(int argc, char* argv[]) {
   struct sockaddr_in server_addr;
   struct sockaddr_in client_addr;
   socklen_t addr_len = sizeof(client_addr);
+  char buffer[BUFFER_SIZE];
   ssize_t bytes_received;
 
   // Register signal handlers for SIGINT and SIGTERM
@@ -103,6 +104,26 @@ int main(int argc, char* argv[]) {
     }
 
     // Receive data from client
+    while ((bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
+      buffer[bytes_received] = '\0';  // Null-terminate received data
+
+      // Write data to the file
+      fprintf(file_ptr, "%s", buffer);
+      fflush(file_ptr);
+
+      // If newline is found, send the file content back to the client
+      if (strchr(buffer, '\n')) {
+        rewind(file_ptr);  // Go back to the beginning of the file
+
+        char file_buffer[BUFFER_SIZE];
+        size_t bytes_read;
+
+        while ((bytes_read = fread(file_buffer, 1, BUFFER_SIZE, file_ptr)) >
+               0) {
+          send(client_socket, file_buffer, bytes_read, 0);
+        }
+      }
+    }
 
     // Log error when receiving data
     if (-1 == bytes_received) {
