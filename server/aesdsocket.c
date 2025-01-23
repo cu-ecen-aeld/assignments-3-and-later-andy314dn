@@ -1,11 +1,11 @@
 #include <arpa/inet.h>
+#include <errno.h>
 #include <signal.h>
-#include <syslog.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
+#include <syslog.h>
+#include <unistd.h>
 
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
@@ -77,7 +77,6 @@ int main(int argc, char* argv[]) {
     // Log closed connection
 
     // Close client connection
-    
   }
 
   return 0;
