@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
@@ -43,6 +45,19 @@ int main(int argc, char* argv[]) {
   // Register signal handlers for SIGINT and SIGTERM
   signal(SIGINT, cleanup_and_exit);
   signal(SIGTERM, cleanup_and_exit);
+
+  // Open syslog for logging
+  openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
+
+  // Create a socket
+  server_socket = socket(AF_INET, SOCK_STREAM, 0);
+  if (-1 == server_socket) {
+    syslog(LOG_ERR, "Failed to create socket: %s", strerror(errno));
+    return -1;
+  }
+
+  // Configure server address
+
 
   return 0;
 }
