@@ -58,6 +58,27 @@ int main(int argc, char* argv[]) {
 
   // Configure server address
 
+  // Bind the socket to the port
+
+  // Start listening for connections
+
+  // Infinite loop to accept and handle client connections
+  while (1) {
+    // Accept a new client connection
+
+    // Log accepted connection
+
+    // Open the file in append mode
+
+    // Receive data from client
+
+    // Close the file
+
+    // Log closed connection
+
+    // Close client connection
+    
+  }
 
   return 0;
 }
