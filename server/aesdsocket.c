@@ -1,11 +1,13 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <syslog.h>
 #include <unistd.h>
@@ -128,7 +130,43 @@ void handle_client_connection() {
 }
 
 void daemonize() {
-  // pid_t pid;
+  pid_t pid;
+
+  // Fork the process
+  pid = fork();
+
+  if (pid < 0) {
+    syslog(LOG_ERR, "Failed to fork: %s", strerror(errno));
+    exit(ERROR_CODE);
+  }
+
+  // If we are the parent process, exit
+  if (pid > 0) {
+    exit(0);
+  }
+
+  // Set the file permission mask to 0
+  umask(0);
+
+  // Change the working directory to root directory
+  if (chdir("/") < 0) {
+    syslog(LOG_ERR, "Failed to change directory to root: %s", strerror(errno));
+    exit(ERROR_CODE);
+  }
+
+  // // Close all open file descriptors
+  // for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--) {
+  //   close(fd);
+  // }
+  // Close standard file descriptors
+  close(STDIN_FILENO);
+  close(STDOUT_FILENO);
+  close(STDERR_FILENO);
+
+  // Redirect standard file descriptors to /dev/null
+  // open("/dev/null", O_RDONLY);  // stdin
+  // open("/dev/null", O_WRONLY);  // stdout
+  // open("/dev/null", O_RDWR);    // stderr
 }
 
 int main(int argc, char* argv[]) {
@@ -202,6 +240,8 @@ int main(int argc, char* argv[]) {
 
     close(server_fd);
   }
+  syslog(LOG_DEBUG, " ");
+  syslog(LOG_DEBUG, "Server started");
 
   if (NULL == p) {
     syslog(LOG_ERR, "Failed to bind socket: %s", strerror(errno));
@@ -213,6 +253,7 @@ int main(int argc, char* argv[]) {
 
   // If daemon mode is enabled, daemonize the process
   if (daemon_mode) {
+    syslog(LOG_DEBUG, "Daemon mode");
     daemonize();
   }
 
@@ -231,7 +272,7 @@ int main(int argc, char* argv[]) {
     if (ERROR_CODE == client_socket) {
       syslog(LOG_ERR, "Failed to accept connection: %s", strerror(errno));
       // return ERROR_CODE; // if case of foreground process
-      continue; // in case of daemonize
+      continue;  // in case of daemonize
     }
 
     // Get the client IP address and log it
