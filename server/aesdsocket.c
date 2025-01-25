@@ -1,14 +1,18 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <netdb.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <syslog.h>
 #include <unistd.h>
 
 #define FILE_PATH "/var/tmp/aesdsocketdata"
-#define PORT 9000
+#define PORT "9000"
+#define BACKLOG 10
 #define BUFFER_SIZE 1024
 
 // Global variables
@@ -40,11 +44,13 @@ void cleanup_and_exit(int signo) {
 }
 
 int main(int argc, char* argv[]) {
-  struct sockaddr_in server_addr;
-  struct sockaddr_in client_addr;
-  socklen_t addr_len = sizeof(client_addr);
-  char buffer[BUFFER_SIZE];
-  ssize_t bytes_received;
+  int server_fd;
+  // int client_fd;
+  struct addrinfo hints;
+  struct addrinfo* res;
+  struct addrinfo* p;
+  // struct sockaddr_storage client_addr;
+  // socklen_t client_addr_len = sizeof(client_addr);
 
   // Register signal handlers for SIGINT and SIGTERM
   signal(SIGINT, cleanup_and_exit);
@@ -53,95 +59,49 @@ int main(int argc, char* argv[]) {
   // Open syslog for logging
   openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
 
-  // Create a socket
-  server_socket = socket(AF_INET, SOCK_STREAM, 0);
-  if (-1 == server_socket) {
-    syslog(LOG_ERR, "Failed to create socket: %s", strerror(errno));
+  // Set up hints for getaddrinfo
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_INET;        // use IPv4
+  hints.ai_socktype = SOCK_STREAM;  // use TCP
+  hints.ai_flags = AI_PASSIVE;
+
+  // Get address info
+  if (getaddrinfo(NULL, PORT, &hints, &res) != 0) {
+    syslog(LOG_ERR, "getaddrinfo failed");
     return -1;
   }
 
-  // Configure server address
-  memset(&server_addr, 0, sizeof(server_addr));
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_addr.s_addr = INADDR_ANY;
-  server_addr.sin_port = htons(PORT);
+  // Create a socket and bind it
+  for (p = res; p != NULL; p = p->ai_next) {
+    server_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+    if (-1 == server_fd) continue;
 
-  // Bind the socket to the port
-  if (-1 == bind(server_socket, (struct sockaddr*)&server_addr,
-                 sizeof(server_addr))) {
-    syslog(LOG_ERR, "Failed to bind socket: %s", strerror(errno));
-    close(server_socket);
+    if (0 == bind(server_fd, p->ai_addr, p->ai_addrlen)) break;
+
+    close(server_fd);
+  }
+
+  if (NULL == p) {
+    syslog(LOG_ERR, "Failed to bind socket");
+    freeaddrinfo(res);
     return -1;
   }
+
+  freeaddrinfo(res);
 
   // Start listening for connections
-  if (-1 == listen(server_socket, 10)) {
+  if (-1 == listen(server_fd, BACKLOG)) {
     syslog(LOG_ERR, "Failed to listen on socket: %s", strerror(errno));
-    close(server_socket);
+    close(server_fd);
     return -1;
   }
+  syslog(LOG_DEBUG, "Server is listening on port %s", PORT);
 
-  // Infinite loop to accept and handle client connections
-  while (1) {
-    // Accept a new client connection
-    client_socket =
-        accept(server_socket, (struct sockaddr*)&client_addr, &addr_len);
-    if (-1 == client_socket) {
-      syslog(LOG_ERR, "Failed to accept connection: %s", strerror(errno));
-      continue;
-    }
+  // Close the server socket
+  close(server_fd);
 
-    // Log accepted connection
-    syslog(LOG_INFO, "Accepted connection from %s",
-           inet_ntoa(client_addr.sin_addr));
-
-    // Open the file in append mode
-    file_ptr = fopen(FILE_PATH, "a+");
-    if (!file_ptr) {
-      syslog(LOG_ERR, "Failed to open file: %s", strerror(errno));
-      close(client_socket);
-      continue;
-    }
-
-    // Receive data from client
-    while ((bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
-      buffer[bytes_received] = '\0';  // Null-terminate received data
-
-      // Write data to the file
-      fprintf(file_ptr, "%s", buffer);
-      fflush(file_ptr);
-
-      // If newline is found, send the file content back to the client
-      if (strchr(buffer, '\n')) {
-        rewind(file_ptr);  // Go back to the beginning of the file
-
-        char file_buffer[BUFFER_SIZE];
-        size_t bytes_read;
-
-        while ((bytes_read = fread(file_buffer, 1, BUFFER_SIZE, file_ptr)) >
-               0) {
-          send(client_socket, file_buffer, bytes_read, 0);
-        }
-      }
-    }
-
-    // Log error when receiving data
-    if (-1 == bytes_received) {
-      syslog(LOG_ERR, "Error receiving data: %s", strerror(errno));
-    }
-
-    // Close the file
-    fclose(file_ptr);
-    file_ptr = NULL;
-
-    // Log closed connection
-    syslog(LOG_INFO, "Closed connection from %s",
-           inet_ntoa(client_addr.sin_addr));
-
-    // Close client connection
-    close(client_socket);
-    client_socket = -1;
-  }
+  // Close the syslog
+  closelog();
 
   return 0;
 }
