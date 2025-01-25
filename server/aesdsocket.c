@@ -31,15 +31,21 @@ void cleanup_and_exit(int signo) {
 
   // Close client socket if open
   if (client_socket >= 0) {
+    shutdown(client_socket, SHUT_RDWR);  // Disable further send/receive
     close(client_socket);
   }
 
   // Close server socket if open
   if (server_socket >= 0) {
+    shutdown(server_socket, SHUT_RDWR);  // Disable further send/receive
     close(server_socket);
   }
 
   // Remove the file
+  if (file_ptr != NULL) {
+    fclose(file_ptr);
+    file_ptr = NULL;
+  }
   remove(FILE_PATH);
 
   // Close syslog
@@ -92,7 +98,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (NULL == p) {
-    syslog(LOG_ERR, "Failed to bind socket");
+    syslog(LOG_ERR, "Failed to bind socket: %s", strerror(errno));
     freeaddrinfo(res);
     return ERROR_CODE;
   }
@@ -122,6 +128,12 @@ int main(int argc, char* argv[]) {
     syslog(LOG_INFO, "Accepted connection from %s", client_ip);
   } else {
     syslog(LOG_ERR, "Failed to get client IP address");
+  }
+
+  // Log message when closing the connection
+  if (client_socket >= 0) {
+    close(client_socket);
+    syslog(LOG_INFO, "Closed connection from %s", client_ip);
   }
 
   // Close the server socket
