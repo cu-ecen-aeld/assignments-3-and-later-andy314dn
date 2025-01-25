@@ -53,8 +53,9 @@ int main(int argc, char* argv[]) {
   struct addrinfo hints;
   struct addrinfo* res;
   struct addrinfo* p;
-  // struct sockaddr_storage client_addr;
-  // socklen_t client_addr_len = sizeof(client_addr);
+  struct sockaddr_storage client_addr;
+  socklen_t client_addr_len = sizeof(client_addr);
+  char client_ip[INET6_ADDRSTRLEN];
 
   // Register signal handlers for SIGINT and SIGTERM
   signal(SIGINT, cleanup_and_exit);
@@ -104,6 +105,23 @@ int main(int argc, char* argv[]) {
     return ERROR_CODE;
   }
   syslog(LOG_DEBUG, "Server is listening on port %s", PORT);
+
+  // Accept a connection
+  client_socket =
+      accept(server_fd, (struct sockaddr*)&client_addr, &client_addr_len);
+  if (ERROR_CODE == client_socket) {
+    syslog(LOG_ERR, "Failed to accept connection: %s", strerror(errno));
+    close(server_fd);
+    return ERROR_CODE;
+  }
+
+  // Get the client IP address and log it
+  if (inet_ntop(AF_INET, &((struct sockaddr_in*)&client_addr)->sin_addr,
+                client_ip, sizeof(client_ip)) != NULL) {
+    syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+  } else {
+    syslog(LOG_ERR, "Failed to get client IP address");
+  }
 
   // Close the server socket
   close(server_fd);
