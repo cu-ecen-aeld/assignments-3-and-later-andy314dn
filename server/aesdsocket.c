@@ -56,6 +56,8 @@ void cleanup_and_exit(int signo) {
 
 void handle_client_connection() {
   char buffer[BUFFER_SIZE];
+  char* data = NULL;  // Pointer for dynamically allocated memory
+  size_t total_data_size = 0;
   ssize_t bytes_received;
 
   // Open the file for appending
@@ -68,48 +70,50 @@ void handle_client_connection() {
   // Receive data from the client
   while ((bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0)) >
          0) {
-    buffer[bytes_received] = '\0';  // null-terminate the received data
+    buffer[bytes_received] = '\0';  // Null-terminate the received data
 
-    // Write received data to the file
-    if (bytes_received > 0) {
-      if (fwrite(buffer, sizeof(char), bytes_received, file_ptr) !=
-          (size_t)bytes_received) {
+    // Allocate/reallocate memory for the data
+    char* new_data = realloc(data, total_data_size + bytes_received + 1);
+    if (!new_data) {
+      syslog(LOG_ERR, "Failed to allocate memory: %s", strerror(errno));
+      free(data);
+      fclose(file_ptr);
+      return;
+    }
+    data = new_data;
+
+    // Copy the received data into the allocated memory
+    memcpy(data + total_data_size, buffer, bytes_received);
+    total_data_size += bytes_received;
+    data[total_data_size] = '\0';  // Null-terminate the combined data
+
+    // If a newline is detected in the buffer, process the accumulated data
+    if (strchr(buffer, '\n') != NULL) {
+      // Write the accumulated data to the file
+      if (fwrite(data, sizeof(char), total_data_size, file_ptr) !=
+          total_data_size) {
         syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
         break;
       }
+      fflush(file_ptr);  // Ensure data is flushed to disk
 
-      // Append a newline only if not present at the end of the buffer
-      if (buffer[bytes_received - 1] != '\n') {
-        fputc('\n', file_ptr);
-      }
-
-      // Ensure data is flushed to disk
-      fflush(file_ptr);
-    }
-
-    // If a newline is detected in the buffer, send the full file content back
-    if (strchr(buffer, '\n') != NULL) {
-      // Rewind to the beginning of the file
+      // Send the full file content back to the client
       fseek(file_ptr, 0, SEEK_SET);
-
       char file_buffer[BUFFER_SIZE];
       size_t bytes_read;
       while ((bytes_read = fread(file_buffer, sizeof(char), BUFFER_SIZE,
                                  file_ptr)) > 0) {
-        // Remove leading newline if present
-        if (file_buffer[0] == '\n') {
-          memmove(file_buffer, file_buffer + 1, bytes_read - 1);
-          bytes_read--;
-        }
-        
         if (send(client_socket, file_buffer, bytes_read, 0) < 0) {
           syslog(LOG_ERR, "Failed to send data to client: %s", strerror(errno));
           break;
         }
       }
+      fseek(file_ptr, 0, SEEK_END);  // Reset file pointer to append mode
 
-      // Reset file pointer to append mode
-      fseek(file_ptr, 0, SEEK_END);
+      // Free the dynamically allocated memory and reset for the next message
+      free(data);
+      data = NULL;
+      total_data_size = 0;
     }
   }
 
@@ -117,7 +121,8 @@ void handle_client_connection() {
     syslog(LOG_ERR, "Error receiving data from client: %s", strerror(errno));
   }
 
-  // Close file
+  // Cleanup
+  free(data);
   fclose(file_ptr);
   file_ptr = NULL;
 }
