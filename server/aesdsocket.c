@@ -129,7 +129,6 @@ void handle_client_connection() {
 
 int main(int argc, char* argv[]) {
   int server_fd;
-  // int client_fd;
   struct addrinfo hints;
   struct addrinfo* res;
   struct addrinfo* p;
@@ -237,13 +236,8 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  // Close the server socket
-  // close(server_fd);
   syslog(LOG_DEBUG, "Server closed");
   cleanup_and_exit(0);
-
-  // Close the syslog
-  // closelog();
 
   return 0;
 }
