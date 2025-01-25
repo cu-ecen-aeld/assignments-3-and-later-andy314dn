@@ -77,7 +77,7 @@ void handle_client_connection() {
       break;
     }
 
-    // Ensure data is flused to disk
+    // Ensure data is flushed to disk
     fflush(file_ptr);
 
     // If a newline is detected in the buffer, send the full file content back
