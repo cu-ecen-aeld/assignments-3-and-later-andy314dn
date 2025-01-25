@@ -54,6 +54,60 @@ void cleanup_and_exit(int signo) {
   exit(0);
 }
 
+void handle_client_connection() {
+  char buffer[BUFFER_SIZE];
+  ssize_t bytes_received;
+
+  // Open the file for appending
+  file_ptr = fopen(FILE_PATH, "a+");
+  if (NULL == file_ptr) {
+    syslog(LOG_ERR, "Failed to open file: %s", strerror(errno));
+    return;
+  }
+
+  // Receive data from the client
+  while ((bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0)) >
+         0) {
+    buffer[bytes_received] = '\0';  // null-terminate the received data
+
+    // Write received data to the file
+    if (fwrite(buffer, sizeof(char), bytes_received, file_ptr) !=
+        (size_t)bytes_received) {
+      syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
+      break;
+    }
+
+    // Ensure data is flused to disk
+    fflush(file_ptr);
+
+    // If a newline is detected in the buffer, send the full file content back
+    if (strchr(buffer, '\n') != NULL) {
+      // Rewind to the beginning of the file
+      fseek(file_ptr, 0, SEEK_SET);
+
+      char file_buffer[BUFFER_SIZE];
+      size_t bytes_read;
+      while ((bytes_read = fread(file_buffer, sizeof(char), BUFFER_SIZE, file_ptr)) > 0) {
+        if (send(client_socket, file_buffer, bytes_read, 0) < 0) {
+          syslog(LOG_ERR, "Failed to send data to client: %s", strerror(errno));
+          break;
+        }
+      }
+
+      // Reset file pointer to append mode
+      fseek(file_ptr, 0, SEEK_END);
+    }
+  }
+
+  if (bytes_received < 0) {
+    syslog(LOG_ERR, "Error receiving data from client: %s", strerror(errno));
+  }
+
+  // Close file
+  fclose(file_ptr);
+  file_ptr = NULL;
+}
+
 int main(int argc, char* argv[]) {
   int server_fd;
   // int client_fd;
@@ -137,35 +191,40 @@ int main(int argc, char* argv[]) {
   }
   syslog(LOG_DEBUG, "Server is listening on port %s", PORT);
 
-  // Accept a connection
-  client_socket =
-      accept(server_fd, (struct sockaddr*)&client_addr, &client_addr_len);
-  if (ERROR_CODE == client_socket) {
-    syslog(LOG_ERR, "Failed to accept connection: %s", strerror(errno));
-    close(server_fd);
-    return ERROR_CODE;
-  }
+  while (1) {
+    // Accept a connection
+    client_socket =
+        accept(server_fd, (struct sockaddr*)&client_addr, &client_addr_len);
+    if (ERROR_CODE == client_socket) {
+      syslog(LOG_ERR, "Failed to accept connection: %s", strerror(errno));
+      // close(server_fd);
+      return ERROR_CODE;
+    }
 
-  // Get the client IP address and log it
-  if (inet_ntop(AF_INET, &((struct sockaddr_in*)&client_addr)->sin_addr,
-                client_ip, sizeof(client_ip)) != NULL) {
-    syslog(LOG_INFO, "Accepted connection from %s", client_ip);
-  } else {
-    syslog(LOG_ERR, "Failed to get client IP address");
-  }
+    // Get the client IP address and log it
+    if (inet_ntop(AF_INET, &((struct sockaddr_in*)&client_addr)->sin_addr,
+                  client_ip, sizeof(client_ip)) != NULL) {
+      syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+    } else {
+      syslog(LOG_ERR, "Failed to get client IP address");
+    }
 
-  // Log message when closing the connection
-  if (client_socket >= 0) {
-    close(client_socket);
-    syslog(LOG_INFO, "Closed connection from %s", client_ip);
+    handle_client_connection();
+
+    // Log message when closing the connection
+    if (client_socket >= 0) {
+      close(client_socket);
+      syslog(LOG_INFO, "Closed connection from %s", client_ip);
+    }
   }
 
   // Close the server socket
-  close(server_fd);
+  // close(server_fd);
   syslog(LOG_DEBUG, "Server closed");
+  cleanup_and_exit(0);
 
   // Close the syslog
-  closelog();
+  // closelog();
 
   return 0;
 }
