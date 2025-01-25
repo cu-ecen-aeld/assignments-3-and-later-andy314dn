@@ -15,6 +15,8 @@
 #define BACKLOG 10
 #define BUFFER_SIZE 1024
 
+#define ERROR_CODE -1
+
 // Global variables
 int server_socket = -1;
 int client_socket = -1;
@@ -22,7 +24,9 @@ FILE* file_ptr = NULL;
 
 void cleanup_and_exit(int signo) {
   // Log signal received
-  syslog(LOG_INFO, "Caught signal, exiting...");
+  const char* signal_name =
+      (signo == SIGINT) ? "SIGINT" : (signo == SIGTERM) ? "SIGTERM" : "UNKNOWN";
+  syslog(LOG_INFO, "Caught signal %s, exiting...", signal_name);
 
   // Close client socket if open
   if (client_socket >= 0) {
@@ -68,15 +72,19 @@ int main(int argc, char* argv[]) {
   // Get address info
   if (getaddrinfo(NULL, PORT, &hints, &res) != 0) {
     syslog(LOG_ERR, "getaddrinfo failed");
-    return -1;
+    return ERROR_CODE;
   }
 
   // Create a socket and bind it
   for (p = res; p != NULL; p = p->ai_next) {
     server_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-    if (-1 == server_fd) continue;
+    if (ERROR_CODE == server_fd) {
+      continue;
+    }
 
-    if (0 == bind(server_fd, p->ai_addr, p->ai_addrlen)) break;
+    if (0 == bind(server_fd, p->ai_addr, p->ai_addrlen)) {
+      break;
+    }
 
     close(server_fd);
   }
@@ -84,21 +92,22 @@ int main(int argc, char* argv[]) {
   if (NULL == p) {
     syslog(LOG_ERR, "Failed to bind socket");
     freeaddrinfo(res);
-    return -1;
+    return ERROR_CODE;
   }
 
   freeaddrinfo(res);
 
   // Start listening for connections
-  if (-1 == listen(server_fd, BACKLOG)) {
+  if (ERROR_CODE == listen(server_fd, BACKLOG)) {
     syslog(LOG_ERR, "Failed to listen on socket: %s", strerror(errno));
     close(server_fd);
-    return -1;
+    return ERROR_CODE;
   }
   syslog(LOG_DEBUG, "Server is listening on port %s", PORT);
 
   // Close the server socket
   close(server_fd);
+  syslog(LOG_DEBUG, "Server closed");
 
   // Close the syslog
   closelog();
