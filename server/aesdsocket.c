@@ -27,6 +27,7 @@ void cleanup_and_exit(int signo) {
   const char* signal_name =
       (signo == SIGINT) ? "SIGINT" : (signo == SIGTERM) ? "SIGTERM" : "UNKNOWN";
   syslog(LOG_INFO, "Caught signal %s, exiting...", signal_name);
+  syslog(LOG_INFO, "Caught signal, exiting");
 
   // Close client socket if open
   if (client_socket >= 0) {
