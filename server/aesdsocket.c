@@ -71,14 +71,21 @@ void handle_client_connection() {
     buffer[bytes_received] = '\0';  // null-terminate the received data
 
     // Write received data to the file
-    if (fwrite(buffer, sizeof(char), bytes_received, file_ptr) !=
-        (size_t)bytes_received) {
-      syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
-      break;
-    }
+    if (bytes_received > 0) {
+      if (fwrite(buffer, sizeof(char), bytes_received, file_ptr) !=
+          (size_t)bytes_received) {
+        syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
+        break;
+      }
 
-    // Ensure data is flushed to disk
-    fflush(file_ptr);
+      // Append a newline only if not present at the end of the buffer
+      if (buffer[bytes_received - 1] != '\n') {
+        fputc('\n', file_ptr);
+      }
+
+      // Ensure data is flushed to disk
+      fflush(file_ptr);
+    }
 
     // If a newline is detected in the buffer, send the full file content back
     if (strchr(buffer, '\n') != NULL) {
@@ -87,7 +94,14 @@ void handle_client_connection() {
 
       char file_buffer[BUFFER_SIZE];
       size_t bytes_read;
-      while ((bytes_read = fread(file_buffer, sizeof(char), BUFFER_SIZE, file_ptr)) > 0) {
+      while ((bytes_read = fread(file_buffer, sizeof(char), BUFFER_SIZE,
+                                 file_ptr)) > 0) {
+        // Remove leading newline if present
+        if (file_buffer[0] == '\n') {
+          memmove(file_buffer, file_buffer + 1, bytes_read - 1);
+          bytes_read--;
+        }
+        
         if (send(client_socket, file_buffer, bytes_read, 0) < 0) {
           syslog(LOG_ERR, "Failed to send data to client: %s", strerror(errno));
           break;
