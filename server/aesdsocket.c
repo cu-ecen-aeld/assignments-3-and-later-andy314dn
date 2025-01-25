@@ -90,6 +90,15 @@ int main(int argc, char* argv[]) {
       continue;
     }
 
+    // Set SO_REUSEADDR option to allow address reuse
+    int opt = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) <
+        0) {
+      syslog(LOG_ERR, "Failed to set SO_REUSEADDR: %s", strerror(errno));
+      close(server_fd);
+      continue;
+    }
+
     if (0 == bind(server_fd, p->ai_addr, p->ai_addrlen)) {
       break;
     }
