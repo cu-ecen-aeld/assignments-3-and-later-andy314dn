@@ -65,8 +65,23 @@ int main(int argc, char* argv[]) {
   char client_ip[INET6_ADDRSTRLEN];
 
   // Register signal handlers for SIGINT and SIGTERM
-  signal(SIGINT, cleanup_and_exit);
-  signal(SIGTERM, cleanup_and_exit);
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = cleanup_and_exit;  // Set the handler function
+  sigemptyset(&sa.sa_mask);          // No additional signals are blocked
+  sa.sa_flags = 0;                   // No special flags
+
+  // Register handlers for SIGINT and SIGTERM
+  if (sigaction(SIGINT, &sa, NULL) < 0) {
+    syslog(LOG_ERR, "Failed to set signal handler for SIGINT: %s",
+           strerror(errno));
+    exit(ERROR_CODE);
+  }
+  if (sigaction(SIGTERM, &sa, NULL) < 0) {
+    syslog(LOG_ERR, "Failed to set signal handler for SIGTERM: %s",
+           strerror(errno));
+    exit(ERROR_CODE);
+  }
 
   // Open syslog for logging
   openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
