@@ -127,6 +127,10 @@ void handle_client_connection() {
   file_ptr = NULL;
 }
 
+void daemonize() {
+  // pid_t pid;
+}
+
 int main(int argc, char* argv[]) {
   int server_fd;
   struct addrinfo hints;
@@ -135,6 +139,12 @@ int main(int argc, char* argv[]) {
   struct sockaddr_storage client_addr;
   socklen_t client_addr_len = sizeof(client_addr);
   char client_ip[INET6_ADDRSTRLEN];
+  int daemon_mode = 0;
+
+  // Check for "-d" argument
+  if (2 == argc && 0 == strcmp(argv[1], "-d")) {
+    daemon_mode = 1;
+  }
 
   // Register signal handlers for SIGINT and SIGTERM
   struct sigaction sa;
@@ -201,6 +211,11 @@ int main(int argc, char* argv[]) {
 
   freeaddrinfo(res);
 
+  // If daemon mode is enabled, daemonize the process
+  if (daemon_mode) {
+    daemonize();
+  }
+
   // Start listening for connections
   if (ERROR_CODE == listen(server_fd, BACKLOG)) {
     syslog(LOG_ERR, "Failed to listen on socket: %s", strerror(errno));
@@ -215,8 +230,8 @@ int main(int argc, char* argv[]) {
         accept(server_fd, (struct sockaddr*)&client_addr, &client_addr_len);
     if (ERROR_CODE == client_socket) {
       syslog(LOG_ERR, "Failed to accept connection: %s", strerror(errno));
-      // close(server_fd);
-      return ERROR_CODE;
+      // return ERROR_CODE; // if case of foreground process
+      continue; // in case of daemonize
     }
 
     // Get the client IP address and log it
