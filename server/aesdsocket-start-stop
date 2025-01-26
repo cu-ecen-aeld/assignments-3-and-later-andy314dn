@@ -1,17 +1,20 @@
 #!/bin/sh
 ## This script starts aesdsocket application in daemon mode with -d option
 ## It also stop the application through SIGTERM for graceful exit
+## Author: Phuoc NGUYEN
 
 # Define the path to the application
-APP_PATH="/usr/bin/aesdsocket" # in target
-APP_PATH="./aesdsocket" # in host - for testing purpose
+APP_NAME="aesdsocket"
+APP_PATH="/usr/bin/${APP_NAME}"
 
 start() {
-    printf "\033[1;32mStarting aesdsocket...\033[0m\n"
+    printf "\033[1;32mStarting ${APP_NAME}...\033[0m\n"
+    start-stop-daemon -S -n $APP_NAME -a $APP_PATH
 }
 
 stop() {
-    printf "\033[1;34mStopping aesdsocket...\033[0m\n"
+    printf "\033[1;34mStopping ${APP_NAME}...\033[0m\n"
+    start-stop-daemon -K -n $APP_NAME
 }
 
 case "$1" in
