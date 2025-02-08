@@ -171,7 +171,6 @@ void daemonize() {
 
 int main(int argc, char* argv[]) {
   int server_fd;
-  // TODO - hints has red squiqqle in vscode => need to find way to fix it.
   struct addrinfo hints;
   struct addrinfo* res;
   struct addrinfo* p;
