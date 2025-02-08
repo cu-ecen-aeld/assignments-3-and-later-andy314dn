@@ -145,6 +145,12 @@ void daemonize() {
     exit(0);
   }
 
+  // Create a new session and detach from controlling terminal
+  if (setsid() < 0) {
+    syslog(LOG_ERR, "Failed to create new session: %s", strerror(errno));
+    exit(ERROR_CODE);
+  }
+
   // Set the file permission mask to 0
   umask(0);
 
@@ -154,19 +160,21 @@ void daemonize() {
     exit(ERROR_CODE);
   }
 
-  // // Close all open file descriptors
-  // for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--) {
-  //   close(fd);
-  // }
   // Close standard file descriptors
   close(STDIN_FILENO);
   close(STDOUT_FILENO);
   close(STDERR_FILENO);
 
   // Redirect standard file descriptors to /dev/null
-  // open("/dev/null", O_RDONLY);  // stdin
-  // open("/dev/null", O_WRONLY);  // stdout
-  // open("/dev/null", O_RDWR);    // stderr
+  int fd_null = open("/dev/null", O_RDWR);
+  if (fd_null < 0) {
+    syslog(LOG_ERR, "Failed to open /dev/null: %s", strerror(errno));
+    exit(ERROR_CODE);
+  }
+  dup2(fd_null, STDIN_FILENO);
+  dup2(fd_null, STDOUT_FILENO);
+  dup2(fd_null, STDERR_FILENO);
+  close(fd_null);
 }
 
 int main(int argc, char* argv[]) {
