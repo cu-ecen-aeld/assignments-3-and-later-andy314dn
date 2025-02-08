@@ -27,3 +27,9 @@ Add `_GNU_SOURCE` in `.vscode/c_cpp_properties.json`:
     "version": 4
 }
 ```
+
+2. Check for `syslog`:
+
+```bash
+tail -f /var/log/syslog | grep aesdsocket
+```
