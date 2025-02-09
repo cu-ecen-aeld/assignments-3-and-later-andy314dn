@@ -122,10 +122,13 @@ void* handle_client_connection(void* arg) {
     char* new_data = realloc(data, total_data_size + bytes_received + 1);
     if (!new_data) {
       syslog(LOG_ERR, "Failed to allocate memory: %s", strerror(errno));
-      free(data);
       pthread_mutex_lock(&file_mutex);
       fclose(file_ptr);
       pthread_mutex_unlock(&file_mutex);
+      // Only free if it's not NULL
+      if (data) {
+        free(data);
+      }
       return NULL;
     }
     data = new_data;
