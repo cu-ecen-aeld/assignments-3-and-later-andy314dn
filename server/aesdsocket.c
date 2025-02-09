@@ -176,8 +176,10 @@ void* handle_client_connection(void* arg) {
 
   // Cleanup
   free(data);
+  pthread_mutex_lock(&file_mutex);
   fclose(file_ptr);
   file_ptr = NULL;
+  pthread_mutex_unlock(&file_mutex);
   close(client->client_socket);
   syslog(LOG_INFO, "Closed connection");
 
