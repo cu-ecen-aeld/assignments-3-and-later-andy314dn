@@ -156,7 +156,6 @@ void* handle_client_connection(void* arg) {
       while ((bytes_read = fread(file_buffer, sizeof(char), BUFFER_SIZE,
                                  file_ptr)) > 0) {
         if (send(client->client_socket, file_buffer, bytes_read, 0) < 0) {
-          pthread_mutex_unlock(&file_mutex);
           syslog(LOG_ERR, "Failed to send data to client: %s", strerror(errno));
           break;
         }
