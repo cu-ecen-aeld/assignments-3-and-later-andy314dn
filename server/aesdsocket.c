@@ -2,7 +2,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +13,8 @@
 #include <sys/types.h>
 #include <syslog.h>
 #include <unistd.h>
+
+#include "queue.h"
 
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 #define PORT "9000"
@@ -21,8 +25,21 @@
 
 // Global variables
 int server_socket = -1;
-int client_socket = -1;
-FILE* file_ptr = NULL;
+// int client_socket = -1;
+// FILE* file_ptr = NULL;
+pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Thread structure using FreeBSD SLIST (Singly Linked List)
+struct client_thread {
+  pthread_t thread_id;
+  int client_socket;
+  bool complete;
+  SLIST_ENTRY(client_thread) entries;
+};
+
+// Declare a singly linked list head with static initialization
+SLIST_HEAD(thread_list, client_thread)
+thread_head = SLIST_HEAD_INITIALIZER(thread_head);
 
 void cleanup_and_exit(int signo) {
   // Log signal received
@@ -31,11 +48,11 @@ void cleanup_and_exit(int signo) {
   syslog(LOG_INFO, "Caught signal %s, exiting...", signal_name);
   syslog(LOG_INFO, "Caught signal, exiting");
 
-  // Close client socket if open
-  if (client_socket >= 0) {
-    shutdown(client_socket, SHUT_RDWR);  // Disable further send/receive
-    close(client_socket);
-  }
+  // // Close client socket if open
+  // if (client_socket >= 0) {
+  //   shutdown(client_socket, SHUT_RDWR);  // Disable further send/receive
+  //   close(client_socket);
+  // }
 
   // Close server socket if open
   if (server_socket >= 0) {
@@ -44,34 +61,52 @@ void cleanup_and_exit(int signo) {
   }
 
   // Remove the file
-  if (file_ptr != NULL) {
-    fclose(file_ptr);
-    file_ptr = NULL;
-  }
+  // if (file_ptr != NULL) {
+  //   fclose(file_ptr);
+  //   file_ptr = NULL;
+  // }
   remove(FILE_PATH);
 
+  // Join all threads
+  struct client_thread* thread_ptr;
+  while (!SLIST_EMPTY(&thread_head)) {
+    thread_ptr = SLIST_FIRST(&thread_head);
+    pthread_join(thread_ptr->thread_id, NULL);
+    SLIST_REMOVE_HEAD(&thread_head, entries);
+    free(thread_ptr);
+  }
+
+  // Destroy mutex
+  pthread_mutex_destroy(&file_mutex);
+
   // Close syslog
+  syslog(LOG_INFO, "Server exits cleanly");
   closelog();
 
   exit(0);
 }
 
-void handle_client_connection() {
+void* handle_client_connection(void* arg) {
+  struct client_thread* client = (struct client_thread*)arg;
   char buffer[BUFFER_SIZE];
+  FILE* file_ptr;
   char* data = NULL;  // Pointer for dynamically allocated memory
   size_t total_data_size = 0;
   ssize_t bytes_received;
 
-  // Open the file for appending
+  // Open the file for appending with mutex protection
+  pthread_mutex_lock(&file_mutex);
   file_ptr = fopen(FILE_PATH, "a+");
   if (NULL == file_ptr) {
     syslog(LOG_ERR, "Failed to open file: %s", strerror(errno));
-    return;
+    pthread_mutex_unlock(&file_mutex);
+    return NULL;
   }
+  pthread_mutex_unlock(&file_mutex);
 
   // Receive data from the client
-  while ((bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0)) >
-         0) {
+  while ((bytes_received =
+              recv(client->client_socket, buffer, BUFFER_SIZE - 1, 0)) > 0) {
     buffer[bytes_received] = '\0';  // Null-terminate the received data
 
     // Allocate/reallocate memory for the data
@@ -79,8 +114,10 @@ void handle_client_connection() {
     if (!new_data) {
       syslog(LOG_ERR, "Failed to allocate memory: %s", strerror(errno));
       free(data);
+      pthread_mutex_lock(&file_mutex);
       fclose(file_ptr);
-      return;
+      pthread_mutex_unlock(&file_mutex);
+      return NULL;
     }
     data = new_data;
 
@@ -91,26 +128,32 @@ void handle_client_connection() {
 
     // If a newline is detected in the buffer, process the accumulated data
     if (strchr(buffer, '\n') != NULL) {
+      pthread_mutex_lock(&file_mutex);
       // Write the accumulated data to the file
       if (fwrite(data, sizeof(char), total_data_size, file_ptr) !=
           total_data_size) {
+        pthread_mutex_unlock(&file_mutex);
         syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
         break;
       }
       fflush(file_ptr);  // Ensure data is flushed to disk
+      pthread_mutex_unlock(&file_mutex);
 
+      pthread_mutex_lock(&file_mutex);
       // Send the full file content back to the client
       fseek(file_ptr, 0, SEEK_SET);
       char file_buffer[BUFFER_SIZE];
       size_t bytes_read;
       while ((bytes_read = fread(file_buffer, sizeof(char), BUFFER_SIZE,
                                  file_ptr)) > 0) {
-        if (send(client_socket, file_buffer, bytes_read, 0) < 0) {
+        if (send(client->client_socket, file_buffer, bytes_read, 0) < 0) {
+          pthread_mutex_unlock(&file_mutex);
           syslog(LOG_ERR, "Failed to send data to client: %s", strerror(errno));
           break;
         }
       }
       fseek(file_ptr, 0, SEEK_END);  // Reset file pointer to append mode
+      pthread_mutex_unlock(&file_mutex);
 
       // Free the dynamically allocated memory and reset for the next message
       free(data);
@@ -127,6 +170,12 @@ void handle_client_connection() {
   free(data);
   fclose(file_ptr);
   file_ptr = NULL;
+  close(client->client_socket);
+  syslog(LOG_INFO, "Closed connection");
+
+  // Mark thread complete
+  client->complete = true;
+  return NULL;
 }
 
 void daemonize() {
@@ -179,6 +228,7 @@ void daemonize() {
 
 int main(int argc, char* argv[]) {
   int server_fd;
+  int client_socket;
   struct addrinfo hints;
   struct addrinfo* res;
   struct addrinfo* p;
@@ -291,13 +341,33 @@ int main(int argc, char* argv[]) {
       syslog(LOG_ERR, "Failed to get client IP address");
     }
 
-    handle_client_connection();
-
-    // Log message when closing the connection
-    if (client_socket >= 0) {
-      close(client_socket);
-      syslog(LOG_INFO, "Closed connection from %s", client_ip);
+    // Allocate memory for thread structure
+    struct client_thread* thread_info = malloc(sizeof(struct client_thread));
+    if (NULL == thread_info) {
+      // TODO: need some processing here
     }
+    thread_info->client_socket = client_socket;
+    thread_info->complete = false;
+    pthread_create(&thread_info->thread_id, NULL, handle_client_connection,
+                   thread_info);
+    SLIST_INSERT_HEAD(&thread_head, thread_info, entries);
+
+    // Clean up completed threads
+    struct client_thread* thread_ptr;
+    struct client_thread* temp;
+    SLIST_FOREACH_SAFE(thread_ptr, &thread_head, entries, temp) {
+      if (thread_ptr->complete) {
+        pthread_join(thread_ptr->thread_id, NULL);
+        SLIST_REMOVE(&thread_head, thread_ptr, client_thread, entries);
+        free(thread_ptr);
+      }
+    }
+
+    // // Log message when closing the connection
+    // if (client_socket >= 0) {
+    //   close(client_socket);
+    //   syslog(LOG_INFO, "Closed connection from %s", client_ip);
+    // }
   }
 
   syslog(LOG_DEBUG, "Server closed");
