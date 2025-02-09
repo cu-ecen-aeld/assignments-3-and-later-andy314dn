@@ -25,8 +25,6 @@
 
 // Global variables
 int server_socket = -1;
-// int client_socket = -1;
-// FILE* file_ptr = NULL;
 pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Thread structure using FreeBSD SLIST (Singly Linked List)
@@ -47,12 +45,6 @@ void cleanup_and_exit(int signo) {
       (signo == SIGINT) ? "SIGINT" : (signo == SIGTERM) ? "SIGTERM" : "UNKNOWN";
   syslog(LOG_INFO, "Caught signal %s, exiting...", signal_name);
   syslog(LOG_INFO, "Caught signal, exiting");
-
-  // // Close client socket if open
-  // if (client_socket >= 0) {
-  //   shutdown(client_socket, SHUT_RDWR);  // Disable further send/receive
-  //   close(client_socket);
-  // }
 
   // Request threads to terminate before pthread_join()
   // Why? Some threads might still be blocked in recv() and won’t exit properly.
@@ -76,11 +68,6 @@ void cleanup_and_exit(int signo) {
     close(server_socket);
   }
 
-  // Remove the file
-  // if (file_ptr != NULL) {
-  //   fclose(file_ptr);
-  //   file_ptr = NULL;
-  // }
   remove(FILE_PATH);
 
   // Destroy mutex
@@ -383,11 +370,6 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    // // Log message when closing the connection
-    // if (client_socket >= 0) {
-    //   close(client_socket);
-    //   syslog(LOG_INFO, "Closed connection from %s", client_ip);
-    // }
   }
 
   syslog(LOG_DEBUG, "Server closed");
