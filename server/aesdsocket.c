@@ -58,7 +58,7 @@ void cleanup_and_exit(int signo) {
   // Why? Some threads might still be blocked in recv() and won’t exit properly.
   struct client_thread* thread_ptr;
   SLIST_FOREACH(thread_ptr, &thread_head, entries) {
-    shutdown(thread_ptr->client_socket, SHUT_RDWR); // Stop communication
+    shutdown(thread_ptr->client_socket, SHUT_RDWR);  // Stop communication
     close(thread_ptr->client_socket);
   }
 
@@ -358,8 +358,13 @@ int main(int argc, char* argv[]) {
     }
     thread_info->client_socket = client_socket;
     thread_info->complete = false;
-    pthread_create(&thread_info->thread_id, NULL, handle_client_connection,
-                   thread_info);
+    if (pthread_create(&thread_info->thread_id, NULL, handle_client_connection,
+                       thread_info) != 0) {
+      syslog(LOG_ERR, "Failed to create thread: %s", strerror(errno));
+      close(client_socket);
+      free(thread_info);
+      continue;
+    }
     SLIST_INSERT_HEAD(&thread_head, thread_info, entries);
 
     // Clean up completed threads
