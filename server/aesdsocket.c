@@ -93,6 +93,7 @@ void* handle_client_connection(void* arg) {
   char* data = NULL;  // Pointer for dynamically allocated memory
   size_t total_data_size = 0;
   ssize_t bytes_received;
+  syslog(LOG_INFO, "Thread id: %d", client->thread_id);
 
   // Open the file for appending with mutex protection
   pthread_mutex_lock(&file_mutex);
@@ -344,7 +345,9 @@ int main(int argc, char* argv[]) {
     // Allocate memory for thread structure
     struct client_thread* thread_info = malloc(sizeof(struct client_thread));
     if (NULL == thread_info) {
-      // TODO: need some processing here
+      syslog(LOG_ERR, "Failed to allocate memory for thread_info");
+      close(client_socket);
+      continue;
     }
     thread_info->client_socket = client_socket;
     thread_info->complete = false;
