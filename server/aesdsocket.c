@@ -93,7 +93,7 @@ void* handle_client_connection(void* arg) {
   char* data = NULL;  // Pointer for dynamically allocated memory
   size_t total_data_size = 0;
   ssize_t bytes_received;
-  syslog(LOG_INFO, "Thread id: %d", client->thread_id);
+  syslog(LOG_INFO, "Thread id: %lu", client->thread_id);
 
   // Open the file for appending with mutex protection
   pthread_mutex_lock(&file_mutex);
