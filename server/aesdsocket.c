@@ -54,6 +54,22 @@ void cleanup_and_exit(int signo) {
   //   close(client_socket);
   // }
 
+  // Request threads to terminate before pthread_join()
+  // Why? Some threads might still be blocked in recv() and won’t exit properly.
+  struct client_thread* thread_ptr;
+  SLIST_FOREACH(thread_ptr, &thread_head, entries) {
+    shutdown(thread_ptr->client_socket, SHUT_RDWR); // Stop communication
+    close(thread_ptr->client_socket);
+  }
+
+  // Join all threads
+  while (!SLIST_EMPTY(&thread_head)) {
+    thread_ptr = SLIST_FIRST(&thread_head);
+    pthread_join(thread_ptr->thread_id, NULL);
+    SLIST_REMOVE_HEAD(&thread_head, entries);
+    free(thread_ptr);
+  }
+
   // Close server socket if open
   if (server_socket >= 0) {
     shutdown(server_socket, SHUT_RDWR);  // Disable further send/receive
@@ -66,15 +82,6 @@ void cleanup_and_exit(int signo) {
   //   file_ptr = NULL;
   // }
   remove(FILE_PATH);
-
-  // Join all threads
-  struct client_thread* thread_ptr;
-  while (!SLIST_EMPTY(&thread_head)) {
-    thread_ptr = SLIST_FIRST(&thread_head);
-    pthread_join(thread_ptr->thread_id, NULL);
-    SLIST_REMOVE_HEAD(&thread_head, entries);
-    free(thread_ptr);
-  }
 
   // Destroy mutex
   pthread_mutex_destroy(&file_mutex);
