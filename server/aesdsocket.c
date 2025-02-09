@@ -26,6 +26,8 @@
 // Global variables
 int server_socket = -1;
 pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
+// Thread for writing timestamp
+pthread_t timestamp_thread;
 
 // Thread structure using FreeBSD SLIST (Singly Linked List)
 struct client_thread {
@@ -62,6 +64,11 @@ void cleanup_and_exit(int signo) {
     free(thread_ptr);
   }
 
+  // Cancel and join timestamp thread
+  syslog(LOG_INFO, "Destroy timestamp thread");
+  pthread_cancel(timestamp_thread);
+  pthread_join(timestamp_thread, NULL);
+
   // Close server socket if open
   if (server_socket >= 0) {
     shutdown(server_socket, SHUT_RDWR);  // Disable further send/receive
@@ -78,6 +85,29 @@ void cleanup_and_exit(int signo) {
   closelog();
 
   exit(0);
+}
+
+// Function to write timestamp every 10 seconds
+void* timestamp_writer(void* arg) {
+  while (1) {
+    sleep(10);
+
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+    char timestamp[BUFFER_SIZE];
+    strftime(timestamp, sizeof(timestamp), "timestamp:%a, %d %b %Y %H:%M%S %z\n", t);
+
+    pthread_mutex_lock(&file_mutex);
+    FILE* file_ptr = fopen(FILE_PATH, "a");
+    if (file_ptr) {
+      fputs(timestamp, file_ptr);
+      fclose(file_ptr);
+    } else {
+      syslog(LOG_ERR, "Failed to open file for timestamp: %s", strerror(errno));
+    }
+    pthread_mutex_unlock(&file_mutex);
+  }
+  return NULL;
 }
 
 void* handle_client_connection(void* arg) {
@@ -314,6 +344,9 @@ int main(int argc, char* argv[]) {
     syslog(LOG_DEBUG, "Daemon mode");
     daemonize();
   }
+
+  // Start thread for writing timestamp
+  pthread_create(&timestamp_thread, NULL, timestamp_writer, NULL);
 
   // Start listening for connections
   if (ERROR_CODE == listen(server_fd, BACKLOG)) {
