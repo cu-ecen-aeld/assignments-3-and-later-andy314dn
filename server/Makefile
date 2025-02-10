@@ -1,7 +1,7 @@
 # Compiler settings
 # NOTE: comment CC out when running in x86
 CC := $(CROSS_COMPILE)gcc
-CFLAGS := -Wall -Werror -pthread
+CFLAGS := -Wall -Werror -g
 
 # Targets and files
 TARGET := aesdsocket
