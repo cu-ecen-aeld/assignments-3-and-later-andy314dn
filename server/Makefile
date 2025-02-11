@@ -14,7 +14,7 @@ all: $(TARGET)
 
 # Build the "aesdsocket" executable
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ) $(LDFLAGS)
 
 # Compile the source file into an object file
 %.o: %.c
