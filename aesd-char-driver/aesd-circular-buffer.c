@@ -29,9 +29,28 @@
 struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn )
 {
-    /**
-    * TODO: implement per description
-    */
+    // parse the buffer entries to find the requested offset
+    size_t cumulative_size = 0;
+    uint8_t index = buffer->out_offs;
+    // loop until we reach the in offset
+    while (index != buffer->in_offs) {
+        size_t entry_size = buffer->entry[index].size;
+        // check if the requested offset is within this entry
+        if (char_offset < cumulative_size + entry_size) {
+            // found the entry containing the requested offset
+            if (entry_offset_byte_rtn != NULL) {
+                *entry_offset_byte_rtn = char_offset - cumulative_size;
+            }
+            return &buffer->entry[index];
+        }
+        cumulative_size += entry_size;
+        index = (index + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        // if buffer is full and we've looped back to out_offs, we need to stop
+        if (buffer->full && index == buffer->out_offs) {
+            break;
+        }
+    }
+    // requested offset not found in buffer
     return NULL;
 }
 
