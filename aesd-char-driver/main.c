@@ -30,19 +30,46 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
 
+/**
+ * @brief Associate the device structure with the file pointer for future operations.
+ * 
+ * @param inode: Represents the device file in the filesystem.
+ * @param filp: File pointer for the opened file, used to store private data.
+ * 
+ * @return 0 on success.
+ */
 int aesd_open(struct inode *inode, struct file *filp)
 {
     PDEBUG("open");
+    // Sets filp->private_data to point to the aesd_dev structure, retrieved via container_of from inode->i_cdev.
     filp->private_data = container_of(inode->i_cdev, struct aesd_dev, cdev);
     return 0;
 }
 
+/**
+ * @brief Release the device when the file is closed.
+ * 
+ * @param inode: Represents the device file.
+ * @param filp: File pointer for the file being closed.
+ * 
+ * @return 0 to indicate successful release.
+ */
 int aesd_release(struct inode *inode, struct file *filp)
 {
     PDEBUG("release");
     return 0;
 }
 
+/**
+ * @brief Reads data from the circular buffer and copies it to user space.
+ * 
+ * @param filp: File pointer containing the device structure in private_data.
+ * @param buf: User-space buffer to copy data into.
+ * @param count: Number of bytes requested to read.
+ * @param f_pos: File position offset for reading.
+ * 
+ * @return Number of bytes read, 0 for EOF, or -EFAULT on copy failure.
+ */
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
@@ -54,21 +81,25 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 
     PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
 
+    // Locks the device mutex to ensure thread-safe access to the circular buffer.
     if (mutex_lock_interruptible(&dev->lock))
         return -ERESTARTSYS;
 
+    // Finds the buffer entry and offset for the current file position using aesd_circular_buffer_find_entry_offset_for_fpos.
     entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, &entry_offset);
     if (!entry) {
         retval = 0; // EOF
         goto out;
     }
 
+    // Copies the minimum of requested bytes or remaining entry bytes to user space.
     bytes_to_copy = min(count, entry->size - entry_offset);
     if (copy_to_user(buf, entry->buffptr + entry_offset, bytes_to_copy)) {
         retval = -EFAULT;
         goto out;
     }
 
+    // Updates file position and returns the number of bytes read, or 0 for EOF, or -EFAULT on copy failure.
     *f_pos += bytes_to_copy;
     retval = bytes_to_copy;
 
@@ -77,6 +108,16 @@ out:
     return retval;
 }
 
+/**
+ * @brief Writes data from user space to the device, handling partial writes and newline-terminated entries.
+ * 
+ * @param filp: File pointer containing the device structure in private_data.
+ * @param buf: User-space buffer containing data to write.
+ * @param count: Number of bytes to write.
+ * @param f_pos: File position offset (not modified in this implementation).
+ * 
+ * @return Number of bytes written, or an error code (-ENOMEM, -EFAULT, or -ERESTARTSYS).
+ */
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
@@ -92,6 +133,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if (mutex_lock_interruptible(&dev->lock))
         return -ERESTARTSYS;
 
+    // Allocates memory for new data, combining with any existing partial write.
     new_data = kmalloc(count + (dev->partial_write_size), GFP_KERNEL);
     if (!new_data)
         goto out;
@@ -102,6 +144,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         dev->partial_write = NULL;
     }
 
+    // Copies user data into kernel space and checks for a newline character.
     if (copy_from_user(new_data + dev->partial_write_size, buf, count)) {
         kfree(new_data);
         retval = -EFAULT;
@@ -111,6 +154,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     entry.buffptr = new_data;
     entry.size = count + dev->partial_write_size;
 
+    // If a newline is found, adds the entry to the circular buffer and frees old data if the buffer is full.
+    // If no newline, stores data as a partial write for future concatenation.
     for (i = 0; i < entry.size; i++) {
         if (entry.buffptr[i] == '\n') {
             aesd_circular_buffer_add_entry(&dev->buffer, &entry);
@@ -122,6 +167,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         }
     }
 
+    // Returns the number of bytes written or an error code (-ENOMEM, -EFAULT, or -ERESTARTSYS).
     if (!retval) {
         dev->partial_write = new_data;
         dev->partial_write_size = entry.size;
@@ -135,6 +181,9 @@ out:
     return retval;
 }
 
+/**
+ * @brief File operations structure for the AESD character device.
+ */
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,
@@ -143,13 +192,23 @@ struct file_operations aesd_fops = {
     .release =  aesd_release,
 };
 
+/**
+ * @brief Initializes and registers the character device with the kernel.
+ * 
+ * @param dev: Pointer to the aesd_dev structure containing the character device (cdev).
+ * 
+ * @return 0 on success or a negative error code if cdev_add fails.
+ */
 static int aesd_setup_cdev(struct aesd_dev *dev)
 {
+    // Creates a device number using the major and minor numbers.
     int err, devno = MKDEV(aesd_major, aesd_minor);
 
+    // Initializes the cdev structure with the file operations (aesd_fops) and module owner.
     cdev_init(&dev->cdev, &aesd_fops);
     dev->cdev.owner = THIS_MODULE;
     dev->cdev.ops = &aesd_fops;
+    // Adds the character device to the system with cdev_add.
     err = cdev_add (&dev->cdev, devno, 1);
     if (err) {
         printk(KERN_ERR "Error %d adding aesd cdev", err);
@@ -157,43 +216,61 @@ static int aesd_setup_cdev(struct aesd_dev *dev)
     return err;
 }
 
+/**
+ * @brief Initializes the AESD character driver module during loading.
+ * 
+ * @return 0 on success or a negative error code on failure.
+ */
 int aesd_init_module(void)
 {
     dev_t dev = 0;
     int result;
+    // Allocates a dynamic major number for the device using alloc_chrdev_region.
     result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     aesd_major = MAJOR(dev);
     if (result < 0) {
         printk(KERN_WARNING "Can't get major %d\n", aesd_major);
         return result;
     }
+    // Initializes the aesd_device structure, including the circular buffer and mutex.
     memset(&aesd_device, 0, sizeof(struct aesd_dev));
 
     aesd_circular_buffer_init(&aesd_device.buffer);
     mutex_init(&aesd_device.lock);
 
+    // Sets up the character device with aesd_setup_cdev
     result = aesd_setup_cdev(&aesd_device);
 
+    // If setup fails, unregisters the device region and returns the error.
     if (result) {
         unregister_chrdev_region(dev, 1);
     }
     return result;
 }
 
+/**
+ * @brief Cleans up resources when the module is unloaded.
+ * 
+ */
 void aesd_cleanup_module(void)
 {
+    // Creates the device number from major and minor numbers.
     dev_t devno = MKDEV(aesd_major, aesd_minor);
     struct aesd_buffer_entry *entry;
     uint8_t index;
 
+    // Removes the character device from the system with cdev_del.
     cdev_del(&aesd_device.cdev);
 
+    // Frees all buffer entries in the circular buffer using AESD_CIRCULAR_BUFFER_FOREACH.
     AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.buffer, index) {
         if (entry->buffptr)
             kfree(entry->buffptr);
     }
 
+    // Destroys the mutex to release its resources.
     mutex_destroy(&aesd_device.lock);
+    // Unregisters the device region to free the major number.
     unregister_chrdev_region(devno, 1);
 }
 
