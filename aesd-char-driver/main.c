@@ -123,9 +123,10 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 {
     ssize_t retval = -ENOMEM;
     struct aesd_dev *dev = filp->private_data;
-    char *new_data;
-    const char *old_data = NULL;
+    char *new_data = NULL;
     struct aesd_buffer_entry entry;
+    size_t total_size = 0;
+    size_t processed = 0;
     size_t i;
 
     PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
@@ -134,47 +135,60 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         return -ERESTARTSYS;
 
     // Allocates memory for new data, combining with any existing partial write.
-    new_data = kmalloc(count + (dev->partial_write_size), GFP_KERNEL);
+    total_size = count + dev->partial_write_size;
+    new_data = kmalloc(total_size, GFP_KERNEL);
     if (!new_data)
         goto out;
 
+    // Copy existing partial write (if any) to new buffer
     if (dev->partial_write) {
         memcpy(new_data, dev->partial_write, dev->partial_write_size);
         kfree(dev->partial_write);
         dev->partial_write = NULL;
+        dev->partial_write_size = 0;
     }
 
-    // Copies user data into kernel space and checks for a newline character.
+    // Copy user data into kernel space
     if (copy_from_user(new_data + dev->partial_write_size, buf, count)) {
         kfree(new_data);
         retval = -EFAULT;
         goto out;
     }
 
+    // Process the data for newlines
     entry.buffptr = new_data;
-    entry.size = count + dev->partial_write_size;
-
-    // If a newline is found, adds the entry to the circular buffer and frees old data if the buffer is full.
-    // If no newline, stores data as a partial write for future concatenation.
-    for (i = 0; i < entry.size; i++) {
-        if (entry.buffptr[i] == '\n') {
-            aesd_circular_buffer_add_entry(&dev->buffer, &entry);
-            old_data = dev->buffer.full ? dev->buffer.entry[dev->buffer.out_offs].buffptr : NULL;
-            dev->partial_write = NULL;
-            dev->partial_write_size = 0;
-            retval = i + 1;
-            break;
+    entry.size = 0;
+    for (i = 0; i < total_size; i++) {
+        if (new_data[i] == '\n') {
+            // Complete entry up to and including newline
+            entry.size = i + 1 - processed;
+            if (entry.size > 0) {
+                entry.buffptr = new_data + processed;
+                aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+                // Free old data if buffer is full
+                if (dev->buffer.full) {
+                    kfree(dev->buffer.entry[dev->buffer.out_offs].buffptr);
+                    dev->buffer.entry[dev->buffer.out_offs].buffptr = NULL;
+                }
+            }
+            processed = i + 1;
         }
     }
 
-    // Returns the number of bytes written or an error code (-ENOMEM, -EFAULT, or -ERESTARTSYS).
-    if (!retval) {
-        dev->partial_write = new_data;
-        dev->partial_write_size = entry.size;
-        retval = count;
-    } else if (old_data) {
-        kfree(old_data);
+    // If there's remaining data after the last newline, store it as partial write
+    if (processed < total_size) {
+        dev->partial_write_size = total_size - processed;
+        dev->partial_write = kmalloc(dev->partial_write_size, GFP_KERNEL);
+        if (!dev->partial_write) {
+            kfree(new_data);
+            retval = -ENOMEM;
+            goto out;
+        }
+        memcpy(dev->partial_write, new_data + processed, dev->partial_write_size);
     }
+
+    kfree(new_data);
+    retval = count;
 
 out:
     mutex_unlock(&dev->lock);
@@ -267,6 +281,10 @@ void aesd_cleanup_module(void)
         if (entry->buffptr)
             kfree(entry->buffptr);
     }
+
+    // Frees the partial write buffer to prevent memory leaks.
+    if (aesd_device.partial_write)
+        kfree(aesd_device.partial_write);
 
     // Destroys the mutex to release its resources.
     mutex_destroy(&aesd_device.lock);
