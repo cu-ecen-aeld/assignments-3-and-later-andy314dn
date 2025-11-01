@@ -156,18 +156,23 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
 
     // Process the data for newlines
-    entry.buffptr = new_data;
-    entry.size = 0;
     for (i = 0; i < total_size; i++) {
         if (new_data[i] == '\n') {
             // Complete entry up to and including newline
             entry.size = i + 1 - processed;
             if (entry.size > 0) {
-                entry.buffptr = new_data + processed;
+                // Allocate a new buffer for the entry
+                entry.buffptr = kmalloc(entry.size, GFP_KERNEL);
+                if (!entry.buffptr) {
+                    kfree(new_data);
+                    retval = -ENOMEM;
+                    goto out;
+                }
+                memcpy((char *)entry.buffptr, new_data + processed, entry.size);
                 aesd_circular_buffer_add_entry(&dev->buffer, &entry);
                 // Free old data if buffer is full
                 if (dev->buffer.full) {
-                    kfree(dev->buffer.entry[dev->buffer.out_offs].buffptr);
+                    kfree((void *)dev->buffer.entry[dev->buffer.out_offs].buffptr);
                     dev->buffer.entry[dev->buffer.out_offs].buffptr = NULL;
                 }
             }
