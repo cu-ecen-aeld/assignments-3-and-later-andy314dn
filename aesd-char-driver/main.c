@@ -87,13 +87,19 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 
     // Finds the buffer entry and offset for the current file position using aesd_circular_buffer_find_entry_offset_for_fpos.
     entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, &entry_offset);
-    if (!entry) {
-        retval = 0; // EOF
+    if (!entry || !entry->buffptr || entry->size == 0) {
+        retval = 0; // EOF or invalid entry
+        goto out;
+    }
+
+    // Validates the entry's buffptr and size to prevent invalid memory access.
+    bytes_to_copy = min(count, entry->size - entry_offset);
+    if (bytes_to_copy == 0) {
+        retval = 0; // No more data in this entry
         goto out;
     }
 
     // Copies the minimum of requested bytes or remaining entry bytes to user space.
-    bytes_to_copy = min(count, entry->size - entry_offset);
     if (copy_to_user(buf, entry->buffptr + entry_offset, bytes_to_copy)) {
         retval = -EFAULT;
         goto out;
@@ -169,12 +175,12 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                     goto out;
                 }
                 memcpy((char *)entry.buffptr, new_data + processed, entry.size);
-                aesd_circular_buffer_add_entry(&dev->buffer, &entry);
-                // Free old data if buffer is full
+                // Add entry to circular buffer
                 if (dev->buffer.full) {
+                    // Free the oldest entry before overwriting
                     kfree((void *)dev->buffer.entry[dev->buffer.out_offs].buffptr);
-                    dev->buffer.entry[dev->buffer.out_offs].buffptr = NULL;
                 }
+                aesd_circular_buffer_add_entry(&dev->buffer, &entry);
             }
             processed = i + 1;
         }
