@@ -135,6 +135,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     size_t i;
 
     PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
+    if (dev->partial_write) {
+        PDEBUG("partial_write before: size=%zu, data=%.*s", dev->partial_write_size, (int)dev->partial_write_size, dev->partial_write);
+    } else {
+        PDEBUG("partial_write before: empty");
+    }
 
     if (mutex_lock_interruptible(&dev->lock))
         return -ERESTARTSYS;
@@ -148,9 +153,6 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     // Copy existing partial write (if any) to new buffer
     if (dev->partial_write) {
         memcpy(new_data, dev->partial_write, dev->partial_write_size);
-        kfree(dev->partial_write);
-        dev->partial_write = NULL;
-        dev->partial_write_size = 0;
     }
 
     // Copy user data into kernel space
@@ -159,6 +161,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         retval = -EFAULT;
         goto out;
     }
+
+    // Log the full new_data buffer
+    PDEBUG("new_data=%.*s", (int)total_size, new_data);
 
     // Check for a single newline
     for (i = 0; i < total_size; i++) {
@@ -172,11 +177,16 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 goto out;
             }
             memcpy((char *)entry.buffptr, new_data, entry.size);
+            PDEBUG("Adding entry: size=%zu, data=%.*s", entry.size, (int)entry.size, entry.buffptr);
             // Add entry to circular buffer
             if (dev->buffer.full) {
                 kfree((void *)dev->buffer.entry[dev->buffer.out_offs].buffptr);
             }
             aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+            // Clear partial write
+            kfree(dev->partial_write);
+            dev->partial_write = NULL;
+            dev->partial_write_size = 0;
             // Store remaining data (if any) as partial write
             if (i + 1 < total_size) {
                 dev->partial_write_size = total_size - (i + 1);
@@ -189,13 +199,14 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 memcpy(dev->partial_write, new_data + i + 1, dev->partial_write_size);
             }
             kfree(new_data);
+            PDEBUG("partial_write after: size=%zu, data=%.*s", dev->partial_write_size, (int)dev->partial_write_size, dev->partial_write ? dev->partial_write : "");
             retval = count;
             goto out;
         }
     }
 
     // No newline found, store all data as partial write
-    dev->partial_write_size = total_size;
+    kfree(dev->partial_write);
     dev->partial_write = kmalloc(total_size, GFP_KERNEL);
     if (!dev->partial_write) {
         kfree(new_data);
@@ -203,7 +214,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         goto out;
     }
     memcpy(dev->partial_write, new_data, total_size);
+    dev->partial_write_size = total_size;
     kfree(new_data);
+    PDEBUG("partial_write after: size=%zu, data=%.*s", dev->partial_write_size, (int)dev->partial_write_size, dev->partial_write);
     retval = count;
 
 out:
