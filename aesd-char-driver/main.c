@@ -130,10 +130,11 @@ out:
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    // Initialize variables: device pointer, temporary buffer, return value, and loop index
+    // Initialize variables: device pointer, temporary buffer, return value, and total size
     struct aesd_dev *dev = filp->private_data;
     char *new_data = NULL;
     ssize_t retval = -ENOMEM;
+    size_t total_size = 0;
     size_t i;
 
     // Log write operation for debugging
@@ -150,8 +151,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if (mutex_lock_interruptible(&dev->lock))
         return -ERESTARTSYS;
 
+    // Calculate total size of existing partial write plus new user data
+    total_size = count + dev->partial_write_size;
+
     // Allocate buffer for existing partial write plus new user data
-    new_data = kmalloc(dev->partial_write_size + count, GFP_KERNEL);
+    new_data = kmalloc(total_size, GFP_KERNEL);
     if (!new_data)
         goto out;
 
@@ -167,10 +171,10 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
 
     // Log combined buffer for debugging
-    PDEBUG("new_data=%.*s", (int)(dev->partial_write_size + count), new_data);
+    PDEBUG("new_data=%.*s", (int)total_size, new_data);
 
     // Check for a single newline to complete a command
-    for (i = 0; i < dev->partial_write_size + count; i++) {
+    for (i = 0; i < total_size; i++) {
         if (new_data[i] == '\n') {
             // Create new circular buffer entry for data up to and including newline
             struct aesd_buffer_entry entry;
@@ -192,7 +196,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             aesd_circular_buffer_add_entry(&dev->buffer, &entry);
 
             // Update partial write with any remaining data after newline
-            dev->partial_write_size = dev->partial_write_size + count - (i + 1);
+            dev->partial_write_size = total_size - (i + 1);
             if (dev->partial_write_size > 0) {
                 dev->partial_write = kmalloc(dev->partial_write_size, GFP_KERNEL);
                 if (!dev->partial_write) {
@@ -212,13 +216,13 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
     // No newline found; update partial write with all data
     kfree(dev->partial_write);
-    dev->partial_write = kmalloc(dev->partial_write_size + count, GFP_KERNEL);
+    dev->partial_write = kmalloc(total_size, GFP_KERNEL);
     if (!dev->partial_write) {
         retval = -ENOMEM;
         goto out;
     }
-    memcpy(dev->partial_write, new_data, dev->partial_write_size + count);
-    dev->partial_write_size += count;
+    memcpy(dev->partial_write, new_data, total_size);
+    dev->partial_write_size = total_size;
     // Set return value to number of bytes processed
     retval = count;
 
