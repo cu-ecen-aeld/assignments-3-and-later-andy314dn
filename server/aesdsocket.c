@@ -16,18 +16,28 @@
 
 #include "queue.h"
 
+#ifdef USE_AESD_CHAR_DEVICE
+#define FILE_PATH "/dev/aesdchar"
+#else
 #define FILE_PATH "/var/tmp/aesdsocketdata"
+#endif
 #define PORT "9000"
 #define BACKLOG 10
 #define BUFFER_SIZE 1024
 
 #define ERROR_CODE -1
 
+// Color definitions for logging
+const char* BLUE = "\033[1;34m";
+const char* NC = "\033[0m";  // No Color
+
 // Global variables
 int server_socket = -1;
 pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
-// Thread for writing timestamp
+#ifndef USE_AESD_CHAR_DEVICE
+// Thread for writing timestamp (only used when not using aesdchar)
 pthread_t timestamp_thread;
+#endif
 
 // Thread structure using FreeBSD SLIST (Singly Linked List)
 struct client_thread {
@@ -64,10 +74,12 @@ void cleanup_and_exit(int signo) {
     free(thread_ptr);
   }
 
+#ifndef USE_AESD_CHAR_DEVICE
   // Cancel and join timestamp thread
   syslog(LOG_INFO, "Destroy timestamp thread");
   pthread_cancel(timestamp_thread);
   pthread_join(timestamp_thread, NULL);
+#endif
 
   // Close server socket if open
   if (server_socket >= 0) {
@@ -75,7 +87,10 @@ void cleanup_and_exit(int signo) {
     close(server_socket);
   }
 
+#ifndef USE_AESD_CHAR_DEVICE
+  // Only remove the file if not using the character device
   remove(FILE_PATH);
+#endif
 
   // Destroy mutex
   pthread_mutex_destroy(&file_mutex);
@@ -87,6 +102,7 @@ void cleanup_and_exit(int signo) {
   exit(0);
 }
 
+#ifndef USE_AESD_CHAR_DEVICE
 // Function to write timestamp every 10 seconds
 void* timestamp_writer(void* arg) {
   while (1) {
@@ -95,7 +111,7 @@ void* timestamp_writer(void* arg) {
     time_t now = time(NULL);
     struct tm* t = localtime(&now);
     char timestamp[BUFFER_SIZE];
-    strftime(timestamp, sizeof(timestamp), "timestamp:%a, %d %b %Y %H:%M%S %z\n", t);
+    strftime(timestamp, sizeof(timestamp), "timestamp:%a, %d %b %Y %H:%M:%S %z\n", t);
 
     pthread_mutex_lock(&file_mutex);
     FILE* file_ptr = fopen(FILE_PATH, "a");
@@ -109,26 +125,17 @@ void* timestamp_writer(void* arg) {
   }
   return NULL;
 }
+#endif
 
 void* handle_client_connection(void* arg) {
   struct client_thread* client = (struct client_thread*)arg;
   char buffer[BUFFER_SIZE];
-  FILE* file_ptr;
+  FILE* file_ptr = NULL;
   char* data = NULL;  // Pointer for dynamically allocated memory
   size_t total_data_size = 0;
   ssize_t bytes_received;
   syslog(LOG_INFO, "Thread [%lu] handling client socket [%d]",
          client->thread_id, client->client_socket);
-
-  // Open the file for appending with mutex protection
-  pthread_mutex_lock(&file_mutex);
-  file_ptr = fopen(FILE_PATH, "a+");
-  if (NULL == file_ptr) {
-    syslog(LOG_ERR, "Failed to open file: %s", strerror(errno));
-    pthread_mutex_unlock(&file_mutex);
-    return NULL;
-  }
-  pthread_mutex_unlock(&file_mutex);
 
   // Receive data from the client
   while ((bytes_received =
@@ -139,12 +146,13 @@ void* handle_client_connection(void* arg) {
     char* new_data = realloc(data, total_data_size + bytes_received + 1);
     if (!new_data) {
       syslog(LOG_ERR, "Failed to allocate memory: %s", strerror(errno));
-      pthread_mutex_lock(&file_mutex);
-      fclose(file_ptr);
-      pthread_mutex_unlock(&file_mutex);
-      // Only free if it's not NULL
       if (data) {
         free(data);
+      }
+      if (file_ptr) {
+        pthread_mutex_lock(&file_mutex);
+        fclose(file_ptr);
+        pthread_mutex_unlock(&file_mutex);
       }
       return NULL;
     }
@@ -157,20 +165,64 @@ void* handle_client_connection(void* arg) {
 
     // If a newline is detected in the buffer, process the accumulated data
     if (strchr(buffer, '\n') != NULL) {
+      // Open the file lazily for writing with mutex protection
       pthread_mutex_lock(&file_mutex);
-      // Write the accumulated data to the file
-      if (fwrite(data, sizeof(char), total_data_size, file_ptr) !=
-          total_data_size) {
+      if (!file_ptr) {
+#ifdef USE_AESD_CHAR_DEVICE
+        file_ptr = fopen(FILE_PATH, "r+"); // Use r+ for character device to allow writing
+#else
+        file_ptr = fopen(FILE_PATH, "a+"); // Use a+ for regular file
+#endif
+        if (!file_ptr) {
+          syslog(LOG_ERR, "Failed to open file for writing: %s", strerror(errno));
+          pthread_mutex_unlock(&file_mutex);
+          free(data);
+          return NULL;
+        }
+      }
+
+      // Write the accumulated data to the file, handling partial writes
+      size_t bytes_to_write = total_data_size;
+      size_t bytes_written_total = 0;
+      while (bytes_to_write > 0) {
+        size_t bytes_written = fwrite(data + bytes_written_total, sizeof(char),
+                                      bytes_to_write, file_ptr);
+        if (bytes_written == 0 && ferror(file_ptr)) {
+          syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
+          pthread_mutex_unlock(&file_mutex);
+          break;
+        }
+        bytes_written_total += bytes_written;
+        bytes_to_write -= bytes_written;
+      }
+
+      if (bytes_written_total != total_data_size) {
+        syslog(LOG_ERR, "Incomplete write to file: %zu of %zu bytes written",
+               bytes_written_total, total_data_size);
         pthread_mutex_unlock(&file_mutex);
-        syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
         break;
       }
+
       fflush(file_ptr);  // Ensure data is flushed to disk
+      fclose(file_ptr);  // Close the write file descriptor
+      file_ptr = NULL;
       pthread_mutex_unlock(&file_mutex);
 
+      // Reopen the file for reading to reset the file position to the beginning
       pthread_mutex_lock(&file_mutex);
+#ifdef USE_AESD_CHAR_DEVICE
+      file_ptr = fopen(FILE_PATH, "r"); // Use read-only mode to reset position
+#else
+      file_ptr = fopen(FILE_PATH, "r"); // Use read-only mode for regular file
+#endif
+      if (!file_ptr) {
+        syslog(LOG_ERR, "Failed to open file for reading: %s", strerror(errno));
+        pthread_mutex_unlock(&file_mutex);
+        free(data);
+        return NULL;
+      }
+
       // Send the full file content back to the client
-      fseek(file_ptr, 0, SEEK_SET);
       char file_buffer[BUFFER_SIZE];
       size_t bytes_read;
       while ((bytes_read = fread(file_buffer, sizeof(char), BUFFER_SIZE,
@@ -180,7 +232,14 @@ void* handle_client_connection(void* arg) {
           break;
         }
       }
-      fseek(file_ptr, 0, SEEK_END);  // Reset file pointer to append mode
+      if (ferror(file_ptr)) {
+        syslog(LOG_ERR, "Error reading from file: %s", strerror(errno));
+        pthread_mutex_unlock(&file_mutex);
+        break;
+      }
+
+      fclose(file_ptr);  // Close the read file descriptor
+      file_ptr = NULL;
       pthread_mutex_unlock(&file_mutex);
 
       // Free the dynamically allocated memory and reset for the next message
@@ -196,10 +255,11 @@ void* handle_client_connection(void* arg) {
 
   // Cleanup
   free(data);
-  pthread_mutex_lock(&file_mutex);
-  fclose(file_ptr);
-  file_ptr = NULL;
-  pthread_mutex_unlock(&file_mutex);
+  if (file_ptr) {
+    pthread_mutex_lock(&file_mutex);
+    fclose(file_ptr);
+    pthread_mutex_unlock(&file_mutex);
+  }
   close(client->client_socket);
   syslog(LOG_INFO, "Closed connection");
 
@@ -293,6 +353,7 @@ int main(int argc, char* argv[]) {
 
   // Open syslog for logging
   openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
+  printf("Starting server and work with file: %s%s%s\n", BLUE, FILE_PATH, NC);
 
   // Set up hints for getaddrinfo
   memset(&hints, 0, sizeof(hints));
@@ -345,8 +406,10 @@ int main(int argc, char* argv[]) {
     daemonize();
   }
 
+#ifndef USE_AESD_CHAR_DEVICE
   // Start thread for writing timestamp
   pthread_create(&timestamp_thread, NULL, timestamp_writer, NULL);
+#endif
 
   // Start listening for connections
   if (ERROR_CODE == listen(server_fd, BACKLOG)) {
