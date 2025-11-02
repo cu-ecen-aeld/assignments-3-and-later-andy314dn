@@ -1,8 +1,9 @@
 # Compiler settings
 # NOTE: comment CC out when running in x86
 CC ?= $(CROSS_COMPILE)gcc
-CFLAGS ?= -Wall -Werror -g -DUSE_AESD_CHAR_DEVICE=1
+CFLAGS ?= -Wall -Werror -g
 LDFLAGS ?= -lpthread
+DEFINES = -DUSE_AESD_CHAR_DEVICE=1
 
 # Targets and files
 TARGET := aesdsocket
@@ -14,11 +15,11 @@ all: $(TARGET)
 
 # Build the "aesdsocket" executable
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(DEFINES) -o $(TARGET) $(OBJ) $(LDFLAGS)
 
 # Compile the source file into an object file
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(DEFINES) -c $< -o $@
 
 # Clean target: remove the "aesdsocket" executable and object files
 clean:
