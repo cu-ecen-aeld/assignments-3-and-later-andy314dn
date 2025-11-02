@@ -13,8 +13,11 @@ NC="\033[0m" # No Color
 APP_NAME="aesdsocket"
 APP_PATH="/usr/bin/${APP_NAME}"
 APP_ARGS="-d"  # Arguments for your application
+MODULE_NAME="aesdchar"
 
 start() {
+    printf "${GREEN}Install ${MODULE_NAME} module${NC}\n"
+    modprobe $MODULE_NAME
     printf "${GREEN}Starting ${APP_NAME}...${NC}\n"
     start-stop-daemon -S -n $APP_NAME -a $APP_PATH -- $APP_ARGS
     if [ $? -eq 0 ]; then
@@ -25,13 +28,14 @@ start() {
 }
 
 stop() {
-    printf "${BLUE}Stopping ${APP_NAME}...${NC}\n"
+    printf "${BLUE}Stopping ${APP_NAME} and ${MODULE_NAME}...${NC}\n"
     start-stop-daemon -K -n $APP_NAME --signal TERM
     if [ $? -eq 0 ]; then
         printf "${BLUE}${APP_NAME} stopped successfully.${NC}\n"
     else
         printf "${RED}Failed to stop ${APP_NAME}.${NC}\n"
     fi
+    rmmod $MODULE_NAME
 }
 
 case "$1" in
