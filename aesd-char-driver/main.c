@@ -24,6 +24,9 @@
 
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
+const char* BLUE = "\033[1;34m";
+const char* CYAN = "\033[1;36m";
+const char* RESET = "\033[0m";
 
 MODULE_AUTHOR("andy314dn");
 MODULE_LICENSE("Dual BSD/GPL");
@@ -271,7 +274,7 @@ int aesd_init_module(void)
     dev_t dev = 0;
     int result;
 
-    PDEBUG("init module");
+    PDEBUG("%sinit module%s", BLUE, RESET);
 
     // Allocates a dynamic major number for the device using alloc_chrdev_region.
     result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
@@ -307,7 +310,7 @@ void aesd_cleanup_module(void)
     struct aesd_buffer_entry *entry;
     uint8_t index;
 
-    PDEBUG("cleanup module");
+    PDEBUG("%scleanup module%s", CYAN, RESET);
 
     // Removes the character device from the system with cdev_del.
     cdev_del(&aesd_device.cdev);
