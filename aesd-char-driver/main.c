@@ -244,6 +244,8 @@ struct file_operations aesd_fops = {
  */
 static int aesd_setup_cdev(struct aesd_dev *dev)
 {
+    PDEBUG("set up char device");
+
     // Creates a device number using the major and minor numbers.
     int err, devno = MKDEV(aesd_major, aesd_minor);
 
@@ -268,6 +270,9 @@ int aesd_init_module(void)
 {
     dev_t dev = 0;
     int result;
+
+    PDEBUG("init module");
+
     // Allocates a dynamic major number for the device using alloc_chrdev_region.
     result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     aesd_major = MAJOR(dev);
@@ -301,6 +306,8 @@ void aesd_cleanup_module(void)
     dev_t devno = MKDEV(aesd_major, aesd_minor);
     struct aesd_buffer_entry *entry;
     uint8_t index;
+
+    PDEBUG("cleanup module");
 
     // Removes the character device from the system with cdev_del.
     cdev_del(&aesd_device.cdev);
