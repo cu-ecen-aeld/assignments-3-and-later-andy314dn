@@ -25,7 +25,7 @@
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 const char* BLUE = "\033[1;34m";
-const char* CYAN = "\033[1;36m";
+const char* RED = "\033[1;31m";
 const char* RESET = "\033[0m";
 
 MODULE_AUTHOR("andy314dn");
@@ -310,7 +310,8 @@ void aesd_cleanup_module(void)
     struct aesd_buffer_entry *entry;
     uint8_t index;
 
-    PDEBUG("%scleanup module%s", CYAN, RESET);
+    PDEBUG("%scleanup module%s", RED, RESET);
+    PDEBUG("\n");
 
     // Removes the character device from the system with cdev_del.
     cdev_del(&aesd_device.cdev);
