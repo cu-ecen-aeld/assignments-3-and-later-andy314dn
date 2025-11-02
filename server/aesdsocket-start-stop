@@ -17,7 +17,7 @@ MODULE_NAME="aesdchar"
 
 start() {
     printf "${GREEN}Install ${MODULE_NAME} module${NC}\n"
-    # call driver_load script from aesd-char-driver (copied to /usr/bin) to load the module
+    # call driver-load.sh script from aesd-char-driver (copied to /usr/bin) to load the module
     driver-load.sh
     printf "${GREEN}Starting ${APP_NAME}...${NC}\n"
     start-stop-daemon -S -n $APP_NAME -a $APP_PATH -- $APP_ARGS
