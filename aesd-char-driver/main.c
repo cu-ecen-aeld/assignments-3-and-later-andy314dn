@@ -244,10 +244,10 @@ struct file_operations aesd_fops = {
  */
 static int aesd_setup_cdev(struct aesd_dev *dev)
 {
-    PDEBUG("set up char device");
-
     // Creates a device number using the major and minor numbers.
     int err, devno = MKDEV(aesd_major, aesd_minor);
+    
+    PDEBUG("set up char device");
 
     // Initializes the cdev structure with the file operations (aesd_fops) and module owner.
     cdev_init(&dev->cdev, &aesd_fops);
