@@ -195,18 +195,20 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             // Add entry to circular buffer
             aesd_circular_buffer_add_entry(&dev->buffer, &entry);
 
+            // Clear partial write since a complete entry was added
+            kfree(dev->partial_write);
+            dev->partial_write = NULL;
+            dev->partial_write_size = 0;
+
             // Update partial write with any remaining data after newline
-            dev->partial_write_size = total_size - (i + 1);
-            if (dev->partial_write_size > 0) {
+            if (i + 1 < total_size) {
+                dev->partial_write_size = total_size - (i + 1);
                 dev->partial_write = kmalloc(dev->partial_write_size, GFP_KERNEL);
                 if (!dev->partial_write) {
                     retval = -ENOMEM;
                     goto out;
                 }
                 memcpy(dev->partial_write, new_data + i + 1, dev->partial_write_size);
-            } else {
-                dev->partial_write = NULL;
-                dev->partial_write_size = 0;
             }
             // Set return value to number of bytes processed
             retval = count;
@@ -214,7 +216,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         }
     }
 
-    // No newline found; update partial write with all data
+    // No newline found; update partial write with all data (append if existing)
     kfree(dev->partial_write);
     dev->partial_write = kmalloc(total_size, GFP_KERNEL);
     if (!dev->partial_write) {
