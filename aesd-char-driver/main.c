@@ -190,10 +190,15 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             // Free oldest entry if circular buffer is full
             if (dev->buffer.full) {
                 kfree((void *)dev->buffer.entry[dev->buffer.out_offs].buffptr);
+                dev->buffer.entry[dev->buffer.out_offs].buffptr = NULL;
+                dev->buffer.entry[dev->buffer.out_offs].size = 0;
             }
 
             // Add entry to circular buffer
             aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+
+            // Log circular buffer state for debugging
+            PDEBUG("Buffer state: in_offs=%u, out_offs=%u, full=%d", dev->buffer.in_offs, dev->buffer.out_offs, dev->buffer.full);
 
             // Clear partial write since a complete entry was added
             kfree(dev->partial_write);
@@ -216,7 +221,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         }
     }
 
-    // No newline found; update partial write with all data (append if existing)
+    // No newline found; update partial write with all data
     kfree(dev->partial_write);
     dev->partial_write = kmalloc(total_size, GFP_KERNEL);
     if (!dev->partial_write) {
