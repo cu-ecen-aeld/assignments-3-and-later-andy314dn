@@ -1,4 +1,6 @@
-# Assignment 8 Instruction
+# Assignment Guidance
+
+## Assignment 8 Instruction
 
 The following are guidances to complete Assignment 8 in this Assignment-3 repository.
 
@@ -23,3 +25,27 @@ Your `/dev/aesdchar` device should use the circular buffer implementation you de
 > c. Perform appropriate locking to ensure safe multi-thread and multi-process access and ensure a full write file operation from a thread completes before accepting a new write file operation.  
 >
 > d. Your implementation should print the expected contents when running the [drivertest.sh](https://github.com/cu-ecen-aeld/assignment-autotest/blob/master/test/assignment8/drivertest.sh) script.
+
+## Assignment 9 Instruction
+
+> Step 3: Update your `aesd-char-driver` implementation in your `assignment 3 and later` repository to add the following features:
+>
+> a. Add custom seek support to your driver using the `llseek` `file_operations` function.  Your seek implementation should:
+>
+> i. Support all positional types (`SEEK_SET`, `SEEK_CUR`, and `SEEK_END`) and update the file position accordingly.
+>
+> 1. For instance, if your driver is storing writes of 5, 7, and 9 bytes each,
+> a file position of 0-5 would represent a byte within the first write,
+> a file position of 6-13 would represent a byte within the second write,
+> and a file position  of 14 through 23 would a byte within represent the 3rd write.
+>
+> For instance: Consider the content in the table below as handled by your driver, where each string ends with a newline character.
+> An offset of 15 would set the pointer to the second byte of the word “Singapore”, byte "i"
+
+```txt
+    Grass\n
+    Sentosa\n
+    Singapore\n
+```
+
+![Assignment 9 table](./assignment-9-table.png "Table of Assignment 9")
