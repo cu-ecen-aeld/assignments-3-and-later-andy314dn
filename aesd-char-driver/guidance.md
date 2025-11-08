@@ -28,16 +28,16 @@ Your `/dev/aesdchar` device should use the circular buffer implementation you de
 
 ## Assignment 9 Instruction
 
-> Step 3: Update your `aesd-char-driver` implementation in your `assignment 3 and later` repository to add the following features:
+> **Step 3**: Update your `aesd-char-driver` implementation in your `assignment 3 and later` repository to add the following features:
 >
 > a. Add custom seek support to your driver using the `llseek` `file_operations` function.  Your seek implementation should:
 >
-> i. Support all positional types (`SEEK_SET`, `SEEK_CUR`, and `SEEK_END`) and update the file position accordingly.
->
-> 1. For instance, if your driver is storing writes of 5, 7, and 9 bytes each,
-> a file position of 0-5 would represent a byte within the first write,
-> a file position of 6-13 would represent a byte within the second write,
-> and a file position  of 14 through 23 would a byte within represent the 3rd write.
+>> i. Support all positional types (`SEEK_SET`, `SEEK_CUR`, and `SEEK_END`) and update the file position accordingly.
+>>
+>>> 1. For instance, if your driver is storing writes of 5, 7, and 9 bytes each,
+>>> a file position of 0-5 would represent a byte within the first write,
+>>> a file position of 6-13 would represent a byte within the second write,
+>>> and a file position  of 14 through 23 would a byte within represent the 3rd write.
 >
 > For instance: Consider the content in the table below as handled by your driver, where each string ends with a newline character.
 > An offset of 15 would set the pointer to the second byte of the word “Singapore”, byte "i"
@@ -49,3 +49,44 @@ Your `/dev/aesdchar` device should use the circular buffer implementation you de
 ```
 
 ![Assignment 9 table](./assignment-9-table.png "Table of Assignment 9")
+
+> **Step 4**: Add `ioctl` command support for `AESDCHAR_IOCSEEKTO` as defined in
+> [aesd_ioctl.h](https://github.com/cu-ecen-aeld/aesd-assignments/blob/assignment9/aesd-char-driver/aesd_ioctl.h)
+> ( [relative link](./aesd_ioctl.h) ) which is passed a buffer from user space containing two 4 byte values.
+> Use `unlocked_ioctl` to implement your ioctl command.
+>
+> a. The first value represents the command to seek into,
+> based on a zero referenced number of commands currently stored by the driver in the command circular buffer.
+> The command reference is relative to the number of commands currently stored in your circular buffer.
+> You will need to translate into the appropriate offset within your circular buffer based on the current location of the output index.
+>
+>> i. For instance, in the example above, a value of 0 refers to the command “Grass\n”.
+>
+> b. The second value represents the zero referenced offset within this command to seek into.
+> All offsets are specified relative to the start of the request.
+>
+>> i. For instance, if the offset was 2 in the command “Grass”, the seek location should be the letter “a”.
+>
+> c. The two parameters above will seek to the appropriate place and update the file pointer
+> as described in the seek support details within the previous step.
+>
+> d. If the two parameters are out of range of the number of write commands/command length, the `ioctl` cmd should return `-EINVAL`.
+
+Here is the last step:
+
+> **Step 5**: Add special handling for socket write commands to your `aesdsocket` server application.
+>
+> a. When the string sent over the socket equals `AESDCHAR_IOCSEEKTO:X,Y` where `X` and `Y` are unsigned decimal integer values,
+> the `X` should be considered the write command to seek into
+> and the `Y` should be considered the offset within the write command.
+>
+> b. These values should be sent to your driver using the `AESDCHAR_IOCSEEKTO` `ioctl` described earlier.
+> The `ioctl` command should be performed before any additional writes to your `aesdchar` device.
+>
+> c. Do not write this string command into the `aesdchar` device as you do with other strings sent to the socket.
+>
+> d. Send the content of the `aesdchar` device back over the socket, as you do with any other string received over the socket interface.
+> We will use this to test the seek command.
+>
+> e. Ensure the read of the file and return over the socket uses the same (not closed and re-opened)
+> file descriptor used to send the ioctl, to ensure your file offset is honored for the read command.
