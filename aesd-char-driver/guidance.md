@@ -217,3 +217,63 @@ This implementation will allow your driver to effectively handle seek requests f
 >
 > e. Ensure the read of the file and return over the socket uses the same (not closed and re-opened)
 > file descriptor used to send the ioctl, to ensure your file offset is honored for the read command.
+
+Guidance for Step 5:
+
+In Step 5, you will be enhancing your `aesdsocket` server application to handle special socket write commands that allow users to seek within the data stored in your driver.
+
+### What You Need to Do in Step 5
+
+1. **Identify the Command Format**: Your application needs to recognize when a string sent over the socket matches the format `AESDCHAR_IOCSEEKTO:X,Y`, where `X` and `Y` are unsigned decimal integers. Here, `X` represents the command index in your circular buffer, and `Y` represents the offset within that command.
+
+2. **Extract Values from the Command**: When you receive a string that matches this format, you will need to parse the string to extract the values of `X` and `Y`. This can be done using string manipulation functions to split the string at the colon and comma.
+
+3. **Send Values to the Driver**: Once you have the values of `X` and `Y`, you will use the `ioctl` command you implemented earlier (`AESDCHAR_IOCSEEKTO`) to send these values to your driver. This will allow the driver to update the file pointer accordingly.
+
+4. **Avoid Writing the Command to the Device**: Unlike other strings sent to the socket, you should **not** write the `AESDCHAR_IOCSEEKTO:X,Y` command string into the `aesdchar` device. This command is meant solely for seeking, not for storage.
+
+5. **Read and Send Content Back**: After performing the `ioctl` command, you will read the content from the `aesdchar` device. This content should be sent back over the socket to the client, just like you would with any other string received through the socket interface.
+
+6. **Maintain the File Descriptor**: Ensure that the read operation uses the same file descriptor that was used to send the `ioctl` command. This is crucial because it ensures that the file offset is honored, meaning that the read will start from the correct position based on the seek operation.
+
+### Example Logic of Step 5
+
+Here’s a simplified example of how you might implement this in your `aesdsocket` server application:
+
+```c
+void handle_socket_command(int socket_fd, const char *command) {
+    if (strncmp(command, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
+        // Extract X and Y from the command
+        int x, y;
+        sscanf(command + 19, "%d,%d", &x, &y);
+
+        // Send the values to the driver using ioctl
+        uint32_t seek_params[2] = {x, y};
+        if (ioctl(driver_fd, AESDCHAR_IOCSEEKTO, seek_params) < 0) {
+            perror("ioctl failed");
+            return;
+        }
+
+        // Read the content from the aesdchar device
+        char buffer[BUFFER_SIZE];
+        ssize_t bytes_read = read(driver_fd, buffer, sizeof(buffer));
+        if (bytes_read > 0) {
+            // Send the content back over the socket
+            send(socket_fd, buffer, bytes_read, 0);
+        }
+    } else {
+        // Handle other string commands as usual
+        write_to_aesdchar_device(command);
+    }
+}
+```
+
+### Summary of Step 5
+
+- **Recognize the command format** `AESDCHAR_IOCSEEKTO:X,Y` and extract `X` and `Y`.
+- **Send these values to your driver** using the `ioctl` command.
+- **Do not write the command string** into the `aesdchar` device.
+- **Read the content from the device** and send it back over the socket.
+- **Use the same file descriptor** for reading to ensure the correct file offset is honored.
+
+By following these steps, you will successfully implement the special handling for socket write commands, allowing users to seek within the data stored in your driver.
