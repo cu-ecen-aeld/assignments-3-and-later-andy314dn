@@ -50,6 +50,62 @@ Your `/dev/aesdchar` device should use the circular buffer implementation you de
 
 ![Assignment 9 table](./assignment-9-table.png "Table of Assignment 9")
 
+Guidance for step 3:
+
+### What You Need to Do in Step 3
+
+1. **Implement the `llseek` Function**: This function is part of the file operations in your driver. It allows you to change the position of the file pointer based on the seek command you receive. You will need to define how the file pointer moves when a user requests to seek to a specific position.
+
+2. **Support Different Seek Types**: Your implementation should handle three types of seeking:
+   - **SEEK_SET**: This sets the file pointer to a specific position from the beginning of the file.
+   - **SEEK_CUR**: This moves the file pointer relative to its current position.
+   - **SEEK_END**: This sets the file pointer to a position relative to the end of the file.
+
+3. **Update the File Position**: As you implement the `llseek` function, you need to ensure that the file position is updated correctly based on the type of seek requested. For example:
+   - If a user wants to seek to position 0-5, they are looking at the first write ("Grass").
+   - If they seek to position 6-13, they are looking at the second write ("Sentosa").
+   - If they seek to position 14-23, they are looking at the third write ("Singapore").
+
+### Example Logic
+
+Here’s a simple way to think about how you might implement this:
+
+```c
+long my_llseek(struct file *file, long offset, int whence) {
+    long new_position;
+
+    switch (whence) {
+        case SEEK_SET:
+            new_position = offset; // Set to the absolute position
+            break;
+        case SEEK_CUR:
+            new_position = file->f_pos + offset; // Move relative to current position
+            break;
+        case SEEK_END:
+            new_position = total_length + offset; // Move relative to the end
+            break;
+        default:
+            return -EINVAL; // Invalid argument
+    }
+
+    // Check if new_position is valid (e.g., within bounds)
+    if (new_position < 0 || new_position > total_length) {
+        return -EINVAL; // Out of bounds
+    }
+
+    file->f_pos = new_position; // Update the file position
+    return new_position; // Return the new position
+}
+```
+
+### Summary
+
+- **Implement the `llseek` function** to handle seeking.
+- **Support SEEK_SET, SEEK_CUR, and SEEK_END** to allow users to navigate through the data.
+- **Update the file position** based on the seek request, ensuring it stays within valid bounds.
+
+This implementation will allow your driver to effectively manage file positions, making it more versatile and user-friendly.
+
 > **Step 4**: Add `ioctl` command support for `AESDCHAR_IOCSEEKTO` as defined in
 > [aesd_ioctl.h](https://github.com/cu-ecen-aeld/aesd-assignments/blob/assignment9/aesd-char-driver/aesd_ioctl.h)
 > ( [relative link](./aesd_ioctl.h) ) which is passed a buffer from user space containing two 4 byte values.
