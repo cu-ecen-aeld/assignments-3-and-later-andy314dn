@@ -128,7 +128,78 @@ This implementation will allow your driver to effectively manage file positions,
 >
 > d. If the two parameters are out of range of the number of write commands/command length, the `ioctl` cmd should return `-EINVAL`.
 
-Here is the last step:
+Guidance for Step 4:
+
+Implementing the `ioctl` command support for `AESDCHAR_IOCSEEKTO` is a crucial step in enhancing your driver’s functionality. Let’s break down what you need to do in this step in a clear and straightforward manner.
+
+### What You Need to Do in Step 4
+
+1. **Define the `ioctl` Command**: You will be implementing the `AESDCHAR_IOCSEEKTO` command, which allows users to seek to a specific position in the command circular buffer. This command will be defined in the `aesd_ioctl.h` header file.
+
+2. **Use `unlocked_ioctl`**: This function allows you to handle the `ioctl` command without locking the driver, which is important for performance and concurrency. You will need to implement your command handling logic within this function.
+
+3. **Extract Values from the Buffer**: The `ioctl` command will receive a buffer containing two 4-byte values:
+   - The **first value** indicates which command to seek into (zero-indexed).
+   - The **second value** indicates the offset within that command.
+
+4. **Translate to the Circular Buffer**: You will need to translate the first value into the appropriate command stored in your circular buffer. For example, if the first value is `0`, it refers to the command "Grass\n". 
+
+5. **Calculate the Seek Location**: Using the second value (the offset), you will determine the exact byte position within the specified command. For instance, if the command is "Grass" and the offset is `2`, the seek location should point to the letter "a".
+
+6. **Update the File Pointer**: After calculating the new position, you will update the file pointer in your driver to reflect this new location.
+
+7. **Error Handling**: If either of the parameters (the command index or the offset) is out of range, you should return `-EINVAL` to indicate an invalid argument.
+
+### Example Logic of Step 4
+
+Here’s a simplified example of how you might implement this in your `ioctl` function:
+
+```c
+long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
+    if (cmd == AESDCHAR_IOCSEEKTO) {
+        // Buffer to hold the two 4-byte values
+        uint32_t seek_params[2];
+        
+        // Copy data from user space to kernel space
+        if (copy_from_user(&seek_params, (void __user *)arg, sizeof(seek_params))) {
+            return -EFAULT; // Handle copy error
+        }
+
+        // Extract the command index and offset
+        int command_index = seek_params[0];
+        int offset = seek_params[1];
+
+        // Validate the command index
+        if (command_index < 0 || command_index >= total_commands) {
+            return -EINVAL; // Invalid command index
+        }
+
+        // Get the command string from the circular buffer
+        char *command = get_command_from_buffer(command_index);
+        int command_length = strlen(command);
+
+        // Validate the offset
+        if (offset < 0 || offset >= command_length) {
+            return -EINVAL; // Invalid offset
+        }
+
+        // Calculate the new file position
+        file->f_pos = calculate_new_position(command_index, offset);
+        return 0; // Success
+    }
+    return -ENOTTY; // Command not recognized
+}
+```
+
+### Summary of Step 4
+
+- **Implement the `ioctl` command** using `unlocked_ioctl`.
+- **Extract the two 4-byte values** from the user buffer.
+- **Translate the command index** to the corresponding command in your circular buffer.
+- **Calculate the new seek position** based on the offset.
+- **Update the file pointer** accordingly and handle any errors by returning `-EINVAL` for invalid parameters.
+
+This implementation will allow your driver to effectively handle seek requests from user space, enhancing its functionality.
 
 > **Step 5**: Add special handling for socket write commands to your `aesdsocket` server application.
 >
