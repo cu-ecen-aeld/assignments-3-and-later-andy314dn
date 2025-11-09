@@ -48,6 +48,15 @@ Your `/dev/aesdchar` device should use the circular buffer implementation you de
     Singapore\n
 ```
 
+|         |        | Byte No. | Byte No. | Byte No. | Byte No. | Byte No. | Byte No. | Byte No. | Byte No. | Byte No. | Byte No. |                                 |                                |
+| ------- | ------ | -------- | -------- | -------- | -------- | -------  | -------- | -------- | -------- | -------- | -------  | ------------------------------- | ------------------------------ |
+| Command | Length | 0        | 1        | 2        | 3        | 4        | 5        | 6        | 7        | 8        | 9        | Seek Offset Start of First Byte | Seek Offset Start of Last Byte |
+| 1       | 5      | G        | r        | a        | s        | s        | \n       | N/A      | N/A      | N/A      | N/A      | 0                               | 5                              |
+| 2       | 7      | S        | e        | n        | t        | o        | s        | a        | \n       | N/A      | N/A      | 6                               | 13                             |
+| 3       | 9      | S        | i        | n        | g        | a        | p        | o        | r        | e        | \n       | 14                              | 23                             |
+
+In the table, `N/A` means not present.
+
 ![Assignment 9 table](./assignment-9-table.png "Table of Assignment 9")
 
 Guidance for step 3:
