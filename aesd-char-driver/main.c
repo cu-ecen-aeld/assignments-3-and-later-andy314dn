@@ -21,6 +21,7 @@
 #include <linux/mutex.h> // for mutex
 #include "aesdchar.h"
 #include "aesd-circular-buffer.h"
+#include "aesd_ioctl.h"
 
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
@@ -236,6 +237,42 @@ out:
     } else {
         PDEBUG("partial_write after: empty");
     }
+    // Update file position by bytes written (to cooperate with llseek)
+    if (retval > 0) {
+        *f_pos += retval;
+    }
+    mutex_unlock(&dev->lock);
+    return retval;
+}
+
+// Helper function to calculate total size (used in llseek)
+static loff_t aesd_buffer_total_size(struct aesd_circular_buffer *buffer) {
+    loff_t total = 0;
+    uint8_t index;
+    struct aesd_buffer_entry *entry;
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, buffer, index) {
+        total += entry->size;
+    }
+    return total;
+}
+
+// Step 3
+// This provides custom seek support with locking, logging, and uses fixed_size_llseek for core logic.
+// The total size is the concatenated size of all entries in the circular buffer.
+static loff_t aesd_llseek(struct file *filp, loff_t offset, int whence) {
+    struct aesd_dev *dev = filp->private_data;
+    loff_t retval;
+    loff_t size;
+
+    PDEBUG("llseek: offset=%lld, whence=%d", offset, whence);
+
+    if (mutex_lock_interruptible(&dev->lock)) {
+        return -ERESTARTSYS;  // Return if mutex cannot be acquired (as per suggestion)
+    }
+
+    size = aesd_buffer_total_size(&dev->buffer);  // Calculate total concatenated size
+    retval = fixed_size_llseek(filp, offset, whence, size);  // Use kernel helper for seek logic with fixed size
+
     mutex_unlock(&dev->lock);
     return retval;
 }
@@ -249,6 +286,7 @@ struct file_operations aesd_fops = {
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek =   aesd_llseek,
 };
 
 /**
