@@ -35,4 +35,6 @@ struct aesd_dev
     size_t partial_write_size; /* Size of the incomplete write buffer */
 };
 
+static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset);
+
 #endif /* AESD_CHAR_DRIVER_AESDCHAR_H_ */

@@ -277,6 +277,82 @@ static loff_t aesd_llseek(struct file *filp, loff_t offset, int whence) {
     return retval;
 }
 
+// Step 4
+// This handles the AESDCHAR_IOCSEEKTO command, copying data from user space and adjusting file offset.
+static long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
+    long retval = 0;
+    struct aesd_dev *dev = filp->private_data;
+
+    PDEBUG("ioctl: cmd=0x%x, arg=0x%lx", cmd, arg);
+
+    if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC) {
+        return -ENOTTY;
+    }
+
+    if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR) {
+        return -ENOTTY;
+    }
+
+    switch (cmd) {
+        case AESDCHAR_IOCSEEKTO: {
+            struct aesd_seekto seekto;
+            if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)) != 0) {
+                retval = -EFAULT;  // Error if copy from user fails
+            } else {
+                if (mutex_lock_interruptible(&dev->lock)) {
+                    return -ERESTARTSYS;  // Return if mutex cannot be acquired
+                }
+                retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);  // Adjust offset
+                mutex_unlock(&dev->lock);
+            }
+            break;
+        }
+        default:
+            return -ENOTTY;
+    }
+
+    return retval;
+}
+
+// This calculates the file position based on the write command index and offset within it.
+// It iterates to find the start of the specified command and adds the offset.
+// Invalid indices or offsets return -EINVAL.
+static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset) {
+    struct aesd_dev *dev = filp->private_data;
+    uint8_t num_entries;
+    loff_t pos = 0;
+    uint8_t index;
+    uint8_t i;
+
+    // Assume mutex is held by caller (as per suggestion)
+
+    // Calculate number of valid entries
+    num_entries = dev->buffer.full ? AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED :
+        ((dev->buffer.in_offs + AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - dev->buffer.out_offs) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED);
+
+    if (write_cmd >= num_entries) {
+        return -EINVAL;  // Out of range command index
+    }
+
+    // Calculate position to start of the specified write_cmd
+    index = dev->buffer.out_offs;
+    for (i = 0; i < write_cmd; i++) {
+        pos += dev->buffer.entry[index].size;
+        index = (index + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    }
+
+    // Check offset within the command
+    if (write_cmd_offset >= dev->buffer.entry[index].size) {
+        return -EINVAL;  // Out of range offset within command
+    }
+
+    pos += write_cmd_offset;
+    filp->f_pos = pos;  // Update file position
+
+    PDEBUG("Adjusted f_pos to %lld (cmd=%u, offset=%u)", pos, write_cmd, write_cmd_offset);
+    return 0;
+}
+
 /**
  * @brief File operations structure for the AESD character device.
  */
@@ -287,6 +363,7 @@ struct file_operations aesd_fops = {
     .open =     aesd_open,
     .release =  aesd_release,
     .llseek =   aesd_llseek,
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 /**
