@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "queue.h"
+#include "aesd_ioctl.h"
 
 #ifdef USE_AESD_CHAR_DEVICE
 #define FILE_PATH "/dev/aesdchar"
@@ -165,105 +166,90 @@ void* handle_client_connection(void* arg) {
 
     // If a newline is detected in the buffer, process the accumulated data
     if (strchr(buffer, '\n') != NULL) {
-      // Open the file lazily for writing with mutex protection
+      bool is_seek_cmd = false;
+
       pthread_mutex_lock(&file_mutex);
-      if (!file_ptr) {
+
+      // Open the file for reading and writing
 #ifdef USE_AESD_CHAR_DEVICE
-        file_ptr = fopen(FILE_PATH, "r+"); // Use r+ for character device to allow writing
+      file_ptr = fopen(FILE_PATH, "r+");  // r+ for character device
 #else
-        file_ptr = fopen(FILE_PATH, "a+"); // Use a+ for regular file
-#endif
-        if (!file_ptr) {
-          syslog(LOG_ERR, "Failed to open file for writing: %s", strerror(errno));
-          pthread_mutex_unlock(&file_mutex);
-          free(data);
-          return NULL;
-        }
-      }
-
-      // Write the accumulated data to the file, handling partial writes
-      size_t bytes_to_write = total_data_size;
-      size_t bytes_written_total = 0;
-      while (bytes_to_write > 0) {
-        size_t bytes_written = fwrite(data + bytes_written_total, sizeof(char),
-                                      bytes_to_write, file_ptr);
-        if (bytes_written == 0 && ferror(file_ptr)) {
-          syslog(LOG_ERR, "Failed to write to file: %s", strerror(errno));
-          pthread_mutex_unlock(&file_mutex);
-          break;
-        }
-        bytes_written_total += bytes_written;
-        bytes_to_write -= bytes_written;
-      }
-
-      if (bytes_written_total != total_data_size) {
-        syslog(LOG_ERR, "Incomplete write to file: %zu of %zu bytes written",
-               bytes_written_total, total_data_size);
-        pthread_mutex_unlock(&file_mutex);
-        break;
-      }
-
-      fflush(file_ptr);  // Ensure data is flushed to disk
-      fclose(file_ptr);  // Close the write file descriptor
-      file_ptr = NULL;
-      pthread_mutex_unlock(&file_mutex);
-
-      // Reopen the file for reading to reset the file position to the beginning
-      pthread_mutex_lock(&file_mutex);
-#ifdef USE_AESD_CHAR_DEVICE
-      file_ptr = fopen(FILE_PATH, "r"); // Use read-only mode to reset position
-#else
-      file_ptr = fopen(FILE_PATH, "r"); // Use read-only mode for regular file
+      file_ptr = fopen(FILE_PATH, "a+");  // a+ for regular file
 #endif
       if (!file_ptr) {
-        syslog(LOG_ERR, "Failed to open file for reading: %s", strerror(errno));
+        syslog(LOG_ERR, "Failed to open file for writing: %s", strerror(errno));
         pthread_mutex_unlock(&file_mutex);
         free(data);
         return NULL;
       }
 
-      // Send the full file content back to the client
-      char file_buffer[BUFFER_SIZE];
-      size_t bytes_read;
-      while ((bytes_read = fread(file_buffer, sizeof(char), BUFFER_SIZE,
-                                 file_ptr)) > 0) {
-        if (send(client->client_socket, file_buffer, bytes_read, 0) < 0) {
-          syslog(LOG_ERR, "Failed to send data to client: %s", strerror(errno));
-          break;
+#ifdef USE_AESD_CHAR_DEVICE
+      // Check if this is a special seek command (step 5)
+      // Parse only if the data ends with \n and matches the format
+      if (data[total_data_size - 1] == '\n') {
+        char cmd_str[total_data_size + 1];
+        memcpy(cmd_str, data, total_data_size);
+        cmd_str[total_data_size - 1] = '\0';  // Replace \n with \0 for parsing
+        uint32_t write_cmd, write_cmd_offset;
+        if (sscanf(cmd_str, "AESDCHAR_IOCSEEKTO:%u,%u", &write_cmd, &write_cmd_offset) == 2) {
+            struct aesd_seekto seekto = {
+                .write_cmd = write_cmd,
+                .write_cmd_offset = write_cmd_offset
+            };
+            int fd = fileno(file_ptr);
+            if (ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto) == 0) {
+                is_seek_cmd = true;  // Flag to skip writing and resetting position
+                syslog(LOG_INFO, "Processed seek command: cmd=%u, offset=%u", write_cmd, write_cmd_offset);
+            } else {
+                syslog(LOG_ERR, "ioctl AESDCHAR_IOCSEEKTO failed: %s", strerror(errno));
+            }
         }
+        // Restore \n if needed, but since not writing, ok
       }
-      if (ferror(file_ptr)) {
-        syslog(LOG_ERR, "Error reading from file: %s", strerror(errno));
-        pthread_mutex_unlock(&file_mutex);
-        break;
+#endif
+
+      if (!is_seek_cmd) {
+        // Write the accumulated data to the file (skip if seek command)
+        size_t bytes_written = fwrite(data, 1, total_data_size, file_ptr);
+        if (bytes_written != total_data_size) {
+            syslog(LOG_ERR, "Failed to write all data to file: wrote %zu/%zu bytes", bytes_written, total_data_size);
+        }
+        fflush(file_ptr);  // Ensure data is flushed to the device/file
       }
 
-      fclose(file_ptr);  // Close the read file descriptor
+      // Reset position to start only if not a seek command (for sending full content)
+      if (!is_seek_cmd) {
+        if (fseek(file_ptr, 0, SEEK_SET) != 0) {
+            syslog(LOG_ERR, "Failed to seek to start of file: %s", strerror(errno));
+        }
+      }
+      // If seek command, position is already set by ioctl, read from there
+
+      // Send the file content back to the client (from current position)
+      ssize_t bytes_read;
+      while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file_ptr)) > 0) {
+        if (send(client->client_socket, buffer, bytes_read, 0) != bytes_read) {
+            syslog(LOG_ERR, "Failed to send data to client: %s", strerror(errno));
+            break;
+        }
+      }
+
+      // Close the file
+      fclose(file_ptr);
       file_ptr = NULL;
       pthread_mutex_unlock(&file_mutex);
 
-      // Free the dynamically allocated memory and reset for the next message
+      // Reset data for next packet
       free(data);
       data = NULL;
       total_data_size = 0;
     }
   }
 
-  if (bytes_received < 0) {
-    syslog(LOG_ERR, "Error receiving data from client: %s", strerror(errno));
-  }
-
   // Cleanup
-  free(data);
-  if (file_ptr) {
-    pthread_mutex_lock(&file_mutex);
-    fclose(file_ptr);
-    pthread_mutex_unlock(&file_mutex);
+  if (data) {
+    free(data);
   }
-  close(client->client_socket);
-  syslog(LOG_INFO, "Closed connection");
-
-  // Mark thread complete
   client->complete = true;
   return NULL;
 }
