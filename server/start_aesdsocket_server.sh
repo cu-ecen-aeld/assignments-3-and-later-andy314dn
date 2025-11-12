@@ -8,4 +8,4 @@ ps aux | grep "./aesdsocket -d" | grep -v grep | awk '{print $2}' | xargs kill
 make clean && make
 printf "\n${YELLOW}Starting aesdsocket in daemon mode...${NC}\n\n"
 ./aesdsocket -d
-bash ../assignment-autotest/test/assignment8/sockettest.sh
+bash ../assignment-autotest/test/assignment9/sockettest.sh

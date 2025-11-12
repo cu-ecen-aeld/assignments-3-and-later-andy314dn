@@ -21,6 +21,7 @@
 #include <linux/mutex.h> // for mutex
 #include "aesdchar.h"
 #include "aesd-circular-buffer.h"
+#include "aesd_ioctl.h"
 
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
@@ -236,8 +237,120 @@ out:
     } else {
         PDEBUG("partial_write after: empty");
     }
+    // Update file position by bytes written (to cooperate with llseek)
+    if (retval > 0) {
+        *f_pos += retval;
+    }
     mutex_unlock(&dev->lock);
     return retval;
+}
+
+// Helper function to calculate total size (used in llseek)
+static loff_t aesd_buffer_total_size(struct aesd_circular_buffer *buffer) {
+    loff_t total = 0;
+    uint8_t index;
+    struct aesd_buffer_entry *entry;
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, buffer, index) {
+        total += entry->size;
+    }
+    return total;
+}
+
+// Step 3
+// This provides custom seek support with locking, logging, and uses fixed_size_llseek for core logic.
+// The total size is the concatenated size of all entries in the circular buffer.
+static loff_t aesd_llseek(struct file *filp, loff_t offset, int whence) {
+    struct aesd_dev *dev = filp->private_data;
+    loff_t retval;
+    loff_t size;
+
+    PDEBUG("llseek: offset=%lld, whence=%d", offset, whence);
+
+    if (mutex_lock_interruptible(&dev->lock)) {
+        return -ERESTARTSYS;  // Return if mutex cannot be acquired (as per suggestion)
+    }
+
+    size = aesd_buffer_total_size(&dev->buffer);  // Calculate total concatenated size
+    retval = fixed_size_llseek(filp, offset, whence, size);  // Use kernel helper for seek logic with fixed size
+
+    mutex_unlock(&dev->lock);
+    return retval;
+}
+
+// Step 4
+// This handles the AESDCHAR_IOCSEEKTO command, copying data from user space and adjusting file offset.
+static long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
+    long retval = 0;
+    struct aesd_dev *dev = filp->private_data;
+
+    PDEBUG("ioctl: cmd=0x%x, arg=0x%lx", cmd, arg);
+
+    if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC) {
+        return -ENOTTY;
+    }
+
+    if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR) {
+        return -ENOTTY;
+    }
+
+    switch (cmd) {
+        case AESDCHAR_IOCSEEKTO: {
+            struct aesd_seekto seekto;
+            if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)) != 0) {
+                retval = -EFAULT;  // Error if copy from user fails
+            } else {
+                if (mutex_lock_interruptible(&dev->lock)) {
+                    return -ERESTARTSYS;  // Return if mutex cannot be acquired
+                }
+                retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);  // Adjust offset
+                mutex_unlock(&dev->lock);
+            }
+            break;
+        }
+        default:
+            return -ENOTTY;
+    }
+
+    return retval;
+}
+
+// This calculates the file position based on the write command index and offset within it.
+// It iterates to find the start of the specified command and adds the offset.
+// Invalid indices or offsets return -EINVAL.
+static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset) {
+    struct aesd_dev *dev = filp->private_data;
+    uint8_t num_entries;
+    loff_t pos = 0;
+    uint8_t index;
+    uint8_t i;
+
+    // Assume mutex is held by caller (as per suggestion)
+
+    // Calculate number of valid entries
+    num_entries = dev->buffer.full ? AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED :
+        ((dev->buffer.in_offs + AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - dev->buffer.out_offs) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED);
+
+    if (write_cmd >= num_entries) {
+        return -EINVAL;  // Out of range command index
+    }
+
+    // Calculate position to start of the specified write_cmd
+    index = dev->buffer.out_offs;
+    for (i = 0; i < write_cmd; i++) {
+        pos += dev->buffer.entry[index].size;
+        index = (index + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    }
+
+    // Check offset within the command
+    if (write_cmd_offset >= dev->buffer.entry[index].size) {
+        return -EINVAL;  // Out of range offset within command
+    }
+
+    pos += write_cmd_offset;
+    filp->f_pos = pos;  // Update file position
+
+    PDEBUG("Adjusted f_pos to %lld (cmd=%u, offset=%u)", pos, write_cmd, write_cmd_offset);
+    return 0;
 }
 
 /**
@@ -249,6 +362,8 @@ struct file_operations aesd_fops = {
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek =   aesd_llseek,
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 /**
